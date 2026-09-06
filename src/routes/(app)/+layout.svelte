@@ -7,15 +7,7 @@
 
 <!-- Хедера немає — вихід і перемикач теми живуть у /settings. -->
 <div class="flex h-svh gap-2 p-2">
-	<Sidebar
-		user={{
-			name: data.user.name,
-			email: data.user.email,
-			image: data.user.image ?? null,
-			role: data.user.role ?? 'OPERATOR'
-		}}
-		newOrders={data.newOrders}
-	/>
+	<Sidebar user={{ role: data.user.role ?? 'OPERATOR' }} newOrders={data.newOrders} />
 
 	<div
 		class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm"

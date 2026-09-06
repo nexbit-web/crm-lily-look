@@ -12,19 +12,13 @@
 		Settings
 	} from '@lucide/svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import * as Avatar from '$lib/components/ui/avatar/index.js';
 	import { atLeast, type Role } from '$lib/permissions';
 
 	let {
 		user,
 		newOrders = 0
 	}: {
-		user: {
-			name: string | null;
-			email: string;
-			image: string | null;
-			role: string;
-		};
+		user: { role: string };
 		newOrders?: number;
 	} = $props();
 
@@ -51,15 +45,10 @@
 	const settingsItem: NavItem = { href: '/settings', label: 'Налаштування', icon: Settings };
 
 	const pathname = $derived(page.url.pathname);
-	const profileActive = $derived(isActive('/profile'));
 
 	function isActive(href: string): boolean {
 		if (href === '/') return pathname === '/';
 		return pathname === href || pathname.startsWith(href + '/');
-	}
-
-	function initials(name: string | null, email: string): string {
-		return (name ?? email).trim().slice(0, 2).toUpperCase();
 	}
 </script>
 
@@ -106,34 +95,6 @@
 		aria-label="Навігація CRM"
 		class="sidebar flex h-full w-14 shrink-0 flex-col items-center rounded-2xl border border-border bg-[#0f0f12] py-3 text-white dark:bg-card"
 	>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				{#snippet child({ props })}
-					<a
-						{...props}
-						href="/profile"
-						aria-current={profileActive ? 'page' : undefined}
-						aria-label="Профіль"
-						class="flex w-full items-center justify-center rounded-xl py-1 outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-					>
-						<Avatar.Root
-							class="size-8 transition-shadow {profileActive
-								? 'ring-2 ring-white/40 ring-offset-2 ring-offset-[#0f0f12]'
-								: ''}"
-						>
-							<Avatar.Image src={user.image ?? ''} alt={user.name ?? user.email} />
-							<Avatar.Fallback class="bg-white/10 text-xs text-white"
-								>{initials(user.name, user.email)}</Avatar.Fallback
-							>
-						</Avatar.Root>
-					</a>
-				{/snippet}
-			</Tooltip.Trigger>
-			<Tooltip.Content side="right"><p>Профіль</p></Tooltip.Content>
-		</Tooltip.Root>
-
-		<div class="my-2 h-px w-8 bg-white/10"></div>
-
 		<div class="flex w-full flex-col items-center gap-1 px-1.5">
 			{#each visibleNav as item (item.href)}
 				{@render navLink(item)}
