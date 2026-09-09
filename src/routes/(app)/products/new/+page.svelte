@@ -68,6 +68,7 @@
 			categories={data.categories}
 			sizeOptions={data.sizeOptions}
 			colorOptions={data.colorOptions}
+			attributeOptions={data.attributeOptions}
 			{fieldErrors}
 		/>
 	</div>

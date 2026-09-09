@@ -18,6 +18,7 @@ type MeasurementPayload = {
 	sleeve: string;
 	length: string;
 };
+type AttributePayload = { name: string; value: string };
 
 export type ParsedVariant = {
 	id?: string;
@@ -36,6 +37,11 @@ export type ParsedMeasurement = {
 	length: number | null;
 };
 
+export type ParsedAttribute = {
+	name: string;
+	value: string;
+};
+
 export type ParsedProduct = {
 	name: string;
 	slugBase: string;
@@ -47,6 +53,7 @@ export type ParsedProduct = {
 	images: { url: string; alt: string | null }[];
 	variants: ParsedVariant[];
 	measurements: ParsedMeasurement[];
+	attributes: ParsedAttribute[];
 };
 
 export type ParseResult =
@@ -92,6 +99,7 @@ export function parseProductForm(form: FormData): ParseResult {
 	const images = parseJson<ImagePayload>(form.get('images'));
 	const variants = parseJson<VariantPayload>(form.get('variants'));
 	const measurements = parseJson<MeasurementPayload>(form.get('measurements'));
+	const attributes = parseJson<AttributePayload>(form.get('attributes'));
 
 	const fieldErrors: Record<string, string> = {};
 
@@ -201,6 +209,34 @@ export function parseProductForm(form: FormData): ParseResult {
 		});
 	}
 
+	// Характеристики теж необовʼязкові. Форма підставляє в новий товар назви
+	// стандартного набору з порожніми значеннями — рядок без значення це не
+	// помилка, а просто «цю характеристику не заповнили».
+	const parsedAttributes: ParsedAttribute[] = [];
+	const seenNames = new Set<string>();
+
+	for (const [index, row] of attributes.entries()) {
+		const attrName = row.name?.trim() ?? '';
+		const value = row.value?.trim() ?? '';
+
+		if (value === '') continue;
+
+		if (attrName === '') {
+			fieldErrors.attributes = `Характеристики, рядок ${index + 1}: вкажіть назву`;
+			break;
+		}
+
+		// На пару (товар, назва) у базі @@unique.
+		const key = attrName.toLowerCase();
+		if (seenNames.has(key)) {
+			fieldErrors.attributes = `Характеристику «${attrName}» вказано двічі`;
+			break;
+		}
+		seenNames.add(key);
+
+		parsedAttributes.push({ name: attrName, value });
+	}
+
 	if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
 	return {
@@ -215,7 +251,8 @@ export function parseProductForm(form: FormData): ParseResult {
 			isFeatured,
 			images: images.map((image) => ({ url: image.url, alt: image.alt?.trim() || name })),
 			variants: parsedVariants,
-			measurements: parsedMeasurements
+			measurements: parsedMeasurements,
+			attributes: parsedAttributes
 		}
 	};
 }

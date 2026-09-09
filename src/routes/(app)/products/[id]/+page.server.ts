@@ -3,6 +3,7 @@ import { Prisma } from '$lib/server/prisma-client/client';
 import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { variantOptions } from '$lib/server/variant-options';
+import { attributeOptions } from '$lib/server/attribute-options';
 import { autoSku, parseProductForm } from '$lib/server/product-input';
 import { kopToUahInput } from '$lib/money';
 import type { Actions, PageServerLoad } from './$types';
@@ -13,18 +14,24 @@ export const load: PageServerLoad = async ({ params }) => {
 		include: {
 			images: { orderBy: { position: 'asc' } },
 			variants: { orderBy: [{ size: 'asc' }, { color: 'asc' }] },
-			measurements: { orderBy: { position: 'asc' } }
+			measurements: { orderBy: { position: 'asc' } },
+			attributes: { orderBy: { position: 'asc' } }
 		}
 	});
 
 	if (!product) error(404, 'Товар не знайдено');
 
-	const [categories, variants] = await Promise.all([categoryOptions(), variantOptions()]);
+	const [categories, variants, attributes] = await Promise.all([
+		categoryOptions(),
+		variantOptions(),
+		attributeOptions()
+	]);
 
 	return {
 		categories,
 		sizeOptions: variants.sizes,
 		colorOptions: variants.colors,
+		attributeOptions: attributes,
 		product: {
 			id: product.id,
 			name: product.name,
@@ -53,7 +60,8 @@ export const load: PageServerLoad = async ({ params }) => {
 				chest: row.chest === null ? '' : String(row.chest),
 				sleeve: row.sleeve === null ? '' : String(row.sleeve),
 				length: row.length === null ? '' : String(row.length)
-			}))
+			})),
+			attributes: product.attributes.map((row) => ({ name: row.name, value: row.value }))
 		}
 	};
 };
@@ -165,6 +173,16 @@ export const actions: Actions = {
 							chest: row.chest,
 							sleeve: row.sleeve,
 							length: row.length,
+							position
+						}))
+					},
+					// Характеристики теж перезаписуємо цілком: назва — це і є
+					// ключ рядка, звіряти нічого.
+					attributes: {
+						deleteMany: {},
+						create: input.attributes.map((row, position) => ({
+							name: row.name,
+							value: row.value,
 							position
 						}))
 					}

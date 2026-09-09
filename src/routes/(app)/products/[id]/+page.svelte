@@ -163,6 +163,7 @@
 				categories={data.categories}
 				sizeOptions={data.sizeOptions}
 				colorOptions={data.colorOptions}
+				attributeOptions={data.attributeOptions}
 				{fieldErrors}
 				initial={{
 					name: product.name,
@@ -174,7 +175,8 @@
 					isFeatured: product.isFeatured,
 					images: product.images,
 					variants: product.variants,
-					measurements: product.measurements
+					measurements: product.measurements,
+					attributes: product.attributes
 				}}
 			/>
 		{/key}

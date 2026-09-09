@@ -18,6 +18,7 @@
 		type CloudinarySignature
 	} from '$lib/cloudinary-upload';
 	import { slugify } from '$lib/slug';
+	import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
 
 	export type ProductFormImage = { url: string; alt: string };
 	export type ProductFormVariant = {
@@ -36,6 +37,11 @@
 		sleeve: string;
 		length: string;
 	};
+	/** Рядок таблиці характеристик: «Склад» — «95% віскоза, 5% еластан». */
+	export type ProductFormAttribute = {
+		name: string;
+		value: string;
+	};
 	export type ProductFormValues = {
 		name: string;
 		slug: string;
@@ -47,6 +53,7 @@
 		images: ProductFormImage[];
 		variants: ProductFormVariant[];
 		measurements: ProductFormMeasurement[];
+		attributes: ProductFormAttribute[];
 	};
 
 	let {
@@ -54,7 +61,8 @@
 		initial,
 		fieldErrors = {},
 		sizeOptions = [],
-		colorOptions = []
+		colorOptions = [],
+		attributeOptions = []
 	}: {
 		categories: { id: string; label: string }[];
 		initial?: Partial<ProductFormValues>;
@@ -63,6 +71,8 @@
 		sizeOptions?: string[];
 		/** Кольори з бази разом з HEX. */
 		colorOptions?: { color: string; colorHex: string | null }[];
+		/** Назви характеристик і значення, що вже зустрічаються в базі. */
+		attributeOptions?: AttributeOption[];
 	} = $props();
 
 	/** Колір усередині розміру — саме він має кількість на складі й SKU. */
@@ -173,7 +183,13 @@
 		sizes:
 			initial?.variants?.length || initial?.measurements?.length
 				? groupSizes(initial.variants ?? [], initial.measurements ?? [])
-				: [emptySize()]
+				: [emptySize()],
+		// Товару без характеристик підставляємо стандартний набір назв: у
+		// магазині він однаковий для всіх, а порожні рядки сервер відкидає —
+		// тож нічого зайвого не збережеться.
+		attributes: initial?.attributes?.length
+			? initial.attributes.map((row) => ({ ...row }))
+			: DEFAULT_ATTRIBUTE_NAMES.map((name) => ({ name, value: '' }))
 	}));
 
 	let name = $state(seed.name);
@@ -187,6 +203,7 @@
 	let isFeatured = $state(seed.isFeatured);
 	let images = $state<ProductFormImage[]>(seed.images);
 	let sizes = $state<SizeGroup[]>(seed.sizes);
+	let attributes = $state<ProductFormAttribute[]>(seed.attributes);
 
 	let uploading = $state(0);
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -311,6 +328,17 @@
 		if (ua) group.ua = ua;
 	}
 
+	/**
+	 * id datalist зі значеннями саме цієї характеристики; undefined — підказок
+	 * немає. «Посадка» й «Сезон» мають короткий словник, тож вибір із трьох
+	 * значень швидший і надійніший за набір руками.
+	 */
+	function attributeListId(attrName: string): string | undefined {
+		const key = attrName.trim().toLowerCase();
+		const index = attributeOptions.findIndex((option) => option.name.toLowerCase() === key);
+		return index >= 0 && attributeOptions[index].values.length > 0 ? `pf-attr-${index}` : undefined;
+	}
+
 	/** Обрали відомий колір — підставляємо його HEX з бази. */
 	function syncColorHex(color: SizeColor) {
 		const match = colorOptions.find(
@@ -325,6 +353,7 @@
 <input type="hidden" name="images" value={JSON.stringify(images)} />
 <input type="hidden" name="variants" value={JSON.stringify(variantsPayload)} />
 <input type="hidden" name="measurements" value={JSON.stringify(measurementsPayload)} />
+<input type="hidden" name="attributes" value={JSON.stringify(attributes)} />
 
 <div class="space-y-6">
 	<Card.Root class="rounded-2xl">
@@ -423,6 +452,83 @@
 					</Label>
 				</div>
 			</div>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root class="rounded-2xl">
+		<Card.Header>
+			<Card.Title>Характеристики</Card.Title>
+			<Card.Description
+				>Таблиця під описом товару на сайті. Порожні рядки не зберігаються.</Card.Description
+			>
+		</Card.Header>
+		<Card.Content class="space-y-2">
+			<div
+				class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] gap-3 px-1 text-xs text-muted-foreground"
+			>
+				<span>Назва</span>
+				<span>Значення</span>
+				<span></span>
+			</div>
+
+			{#each attributes as attribute, index (index)}
+				<div class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] items-center gap-3">
+					<Input
+						bind:value={attribute.name}
+						placeholder="Склад"
+						class="h-10 font-medium"
+						list="pf-attr-names"
+					/>
+					<!-- Список значень залежить від назви в сусідньому полі: для
+					     «Посадки» це три варіанти, для «Складу» — шпаргалка. -->
+					<Input
+						bind:value={attribute.value}
+						placeholder="95% віскоза, 5% еластан"
+						class="h-10"
+						list={attributeListId(attribute.name)}
+					/>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						class="size-8 text-muted-foreground hover:text-destructive"
+						aria-label="Видалити характеристику"
+						onclick={() => attributes.splice(index, 1)}
+					>
+						<X size={15} />
+					</Button>
+				</div>
+			{/each}
+
+			{#if fieldErrors.attributes}
+				<p class="text-xs text-destructive">{fieldErrors.attributes}</p>
+			{/if}
+
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				class="mt-2"
+				onclick={() => attributes.push({ name: '', value: '' })}
+			>
+				<Plus size={14} />
+				Характеристика
+			</Button>
+
+			<datalist id="pf-attr-names">
+				{#each attributeOptions as option (option.name)}
+					<option value={option.name}></option>
+				{/each}
+			</datalist>
+			{#each attributeOptions as option, index (option.name)}
+				{#if option.values.length > 0}
+					<datalist id="pf-attr-{index}">
+						{#each option.values as value (value)}
+							<option {value}></option>
+						{/each}
+					</datalist>
+				{/if}
+			{/each}
 		</Card.Content>
 	</Card.Root>
 

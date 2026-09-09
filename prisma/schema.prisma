@@ -9,12 +9,13 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
 // ─── Каталог ────────────────────────────────────────────────────────────────
 
 model Category {
-  id   String @id @default(cuid())
-  slug String @unique
-  name String
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  name     String
   /// Обкладинка категорії для вітрини /catalog. Заповнює CRM при створенні
   /// категорії; без неї плитка показує заглушку.
   imageUrl String?
@@ -56,6 +57,7 @@ model Product {
   images       ProductImage[]
   variants     ProductVariant[]
   measurements ProductMeasurement[]
+  attributes   ProductAttribute[]
   discounts    DiscountProduct[]
 
   /// Вимикач моделі в CRM: false — товару на сайті немає взагалі.
@@ -88,22 +90,22 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  sku      String  @unique
-  size     String
-  color    String
-  colorHex String?
+  sku        String  @unique
+  size       String
+  color      String
+  colorHex   String?
   /// Базова ціна в копійках, якщо відрізняється від Product.price
   /// (напр. XXL дорожчий). NULL — беремо ціну товару.
-  price    Int?
+  price      Int?
   /// Ціна варіанта після знижок. NULL, коли немає власної ціни — тоді
   /// діє Product.finalPrice. Рахує той самий тригер, що й для товару.
   finalPrice Int?
   /// Скільки одиниць саме цього розміру й кольору на складі.
   /// 0 — розмір зникає з сайту; коли нуль у всіх варіантів,
   /// товар зникає з каталогу, але сторінка лишається доступною.
-  stock    Int     @default(0)
+  stock      Int     @default(0)
   /// Вимикач конкретного розміру/кольору в CRM.
-  isActive Boolean @default(true)
+  isActive   Boolean @default(true)
 
   cartItems CartItem[]
 
@@ -140,6 +142,32 @@ model ProductMeasurement {
   position Int @default(0)
 
   @@unique([productId, size])
+  @@index([productId, position])
+}
+
+/// Характеристика товару — рядок таблиці «Склад», «Посадка», «Сезон»…
+///
+/// Пара «назва + значення» замість окремих колонок: набір характеристик
+/// у різних категорій різний, і додавати колонку заради однієї моделі не
+/// варто. Порядок у картці задає `position`.
+///
+/// Таблицю створив сайт; CRM лише читає й пише в неї.
+model ProductAttribute {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Назва характеристики: «Склад», «Посадка», «Сезон», «Країна виробництва».
+  name  String
+  /// Значення довільним текстом: «95% віскоза, 5% еластан».
+  value String
+
+  /// Порядок рядків у картці товару.
+  position Int @default(0)
+
+  // Одна характеристика з такою назвою на товар — інакше в картці
+  // з'явилося б два «Складу» з різним текстом.
+  @@unique([productId, name])
   @@index([productId, position])
 }
 
@@ -261,7 +289,7 @@ model Order {
   customerPhone String
   customerEmail String?
 
-  deliveryMethod DeliveryMethod
+  deliveryMethod  DeliveryMethod
   /// Адреса зберігається текстом — накладні не створюємо, менеджеру
   /// потрібні лише назва населеного пункту й відділення.
   deliveryCity    String?

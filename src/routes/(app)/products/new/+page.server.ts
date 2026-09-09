@@ -3,12 +3,22 @@ import { Prisma } from '$lib/server/prisma-client/client';
 import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { variantOptions } from '$lib/server/variant-options';
+import { attributeOptions } from '$lib/server/attribute-options';
 import { autoSku, parseProductForm } from '$lib/server/product-input';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	const [categories, variants] = await Promise.all([categoryOptions(), variantOptions()]);
-	return { categories, sizeOptions: variants.sizes, colorOptions: variants.colors };
+	const [categories, variants, attributes] = await Promise.all([
+		categoryOptions(),
+		variantOptions(),
+		attributeOptions()
+	]);
+	return {
+		categories,
+		sizeOptions: variants.sizes,
+		colorOptions: variants.colors,
+		attributeOptions: attributes
+	};
 };
 
 /** Додає -2, -3… поки slug не стане вільним. */
@@ -84,6 +94,13 @@ export const actions: Actions = {
 							chest: row.chest,
 							sleeve: row.sleeve,
 							length: row.length,
+							position
+						}))
+					},
+					attributes: {
+						create: input.attributes.map((row, position) => ({
+							name: row.name,
+							value: row.value,
 							position
 						}))
 					}
