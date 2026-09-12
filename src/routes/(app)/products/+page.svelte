@@ -152,9 +152,16 @@
 				</Table.Header>
 				<Table.Body>
 					{#each data.products as product (product.id)}
+						<!-- Клік по рядку веде на товар, але клік по назві лишаємо
+						     посиланню. Гасити подію на самому <a> не можна: роутер
+						     SvelteKit слухає клік на document, і зупинка спливання
+						     змушувала браузер перезавантажити сторінку замість переходу. -->
 						<Table.Row
 							class="cursor-pointer hover:bg-muted/50"
-							onclick={() => goto(`/products/${product.id}`)}
+							onclick={(event) => {
+								if (event.target instanceof Element && event.target.closest('a')) return;
+								goto(`/products/${product.id}`);
+							}}
 						>
 							<Table.Cell>
 								{#if product.image}
@@ -174,11 +181,7 @@
 							</Table.Cell>
 
 							<Table.Cell>
-								<a
-									href={`/products/${product.id}`}
-									class="font-medium hover:underline"
-									onclick={(event) => event.stopPropagation()}
-								>
+								<a href={`/products/${product.id}`} class="font-medium hover:underline">
 									{product.name}
 								</a>
 								<p class="text-xs text-muted-foreground">/{product.slug}</p>
