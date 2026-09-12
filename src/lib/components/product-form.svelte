@@ -20,7 +20,8 @@
 	import { slugify } from '$lib/slug';
 	import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
 
-	export type ProductFormImage = { url: string; alt: string };
+	/** Фото товару. `color` — до якого кольору воно належить; '' — спільне. */
+	export type ProductFormImage = { url: string; alt: string; color: string };
 	export type ProductFormVariant = {
 		id?: string;
 		sku: string;
@@ -179,7 +180,9 @@
 		price: initial?.price ?? '',
 		isActive: initial?.isActive ?? true,
 		isFeatured: initial?.isFeatured ?? false,
-		images: initial?.images ? initial.images.map((image) => ({ ...image })) : [],
+		images: initial?.images
+			? initial.images.map((image) => ({ ...image, color: image.color ?? '' }))
+			: [],
 		sizes:
 			initial?.variants?.length || initial?.measurements?.length
 				? groupSizes(initial.variants ?? [], initial.measurements ?? [])
@@ -240,6 +243,26 @@
 		}))
 	);
 
+	// Кольори беремо з блоку розмірів: саме вони існують у цього товару, і саме
+	// з ними сайт зіставляє фото.
+	const photoColors = $derived([
+		...new Set(
+			sizes
+				.flatMap((group) => group.colors.map((color) => color.color.trim()))
+				.filter((color) => color !== '')
+		)
+	]);
+
+	/**
+	 * Кольори, у яких на сайті не буде жодного фото: власного немає, спільних
+	 * теж. Не помилка — попередження, бо товар може бути ще в роботі.
+	 */
+	const colorsWithoutPhoto = $derived.by(() => {
+		if (images.some((image) => image.color.trim() === '')) return [];
+		const taken = new Set(images.map((image) => image.color.trim().toLowerCase()));
+		return photoColors.filter((color) => !taken.has(color.toLowerCase()));
+	});
+
 	// Розміри з бази йдуть першими, далі — стандартні ряди без повторів.
 	const sizeSuggestions = $derived([
 		...new Set([...sizeOptions, ...LETTER_SIZES, ...UA_SIZES].map((size) => size.trim()))
@@ -265,7 +288,9 @@
 		for (const file of Array.from(files)) {
 			uploading += 1;
 			try {
-				images.push({ url: await uploadToCloudinary(file, signature), alt: '' });
+				// Колір нове фото не отримує: спільне — безпечніший стан за замовчуванням,
+				// бо таке фото показується за будь-якого вибору на сайті.
+				images.push({ url: await uploadToCloudinary(file, signature), alt: '', color: '' });
 			} catch (err) {
 				toast.error(`${file.name}: ${err instanceof Error ? err.message : 'помилка завантаження'}`);
 			} finally {
@@ -580,7 +605,29 @@
 							{:else}
 								<span class="text-xs text-muted-foreground">#{index + 1}</span>
 							{/if}
-							<div class="ml-auto flex gap-1">
+
+							<!-- Колір фото: спільні сайт показує завжди, решту — тільки
+							     коли вибрано саме цей колір. -->
+							<Select.Root type="single" bind:value={image.color}>
+								<Select.Trigger class="ml-auto h-9 w-40">
+									{image.color || 'Спільне'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="" label="Спільне">Спільне</Select.Item>
+									{#each photoColors as color (color)}
+										<Select.Item value={color} label={color}>{color}</Select.Item>
+									{/each}
+									<!-- Колір, прибраний із розмірів, лишається в списку: інакше
+									     він зник би із селекта, а в базі й далі стояв. -->
+									{#if image.color && !photoColors.includes(image.color)}
+										<Select.Item value={image.color} label={image.color}>
+											{image.color} — немає серед розмірів
+										</Select.Item>
+									{/if}
+								</Select.Content>
+							</Select.Root>
+
+							<div class="flex gap-1">
 								<Button
 									type="button"
 									variant="ghost"
@@ -617,6 +664,13 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+
+			{#if colorsWithoutPhoto.length > 0}
+				<p class="text-xs text-muted-foreground">
+					На сайті залишаться без фото: {colorsWithoutPhoto.join(', ')}. Додайте фото цього кольору
+					або поставте якомусь фото «Спільне».
+				</p>
 			{/if}
 		</Card.Content>
 	</Card.Root>

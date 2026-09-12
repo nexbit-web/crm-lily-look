@@ -45,7 +45,11 @@ export const load: PageServerLoad = async ({ params }) => {
 			isFeatured: product.isFeatured,
 			createdAt: product.createdAt,
 			updatedAt: product.updatedAt,
-			images: product.images.map((image) => ({ url: image.url, alt: image.alt ?? '' })),
+			images: product.images.map((image) => ({
+				url: image.url,
+				alt: image.alt ?? '',
+				color: image.color ?? ''
+			})),
 			variants: product.variants.map((variant) => ({
 				id: variant.id,
 				sku: variant.sku,
@@ -133,6 +137,7 @@ export const actions: Actions = {
 						create: input.images.map((image, position) => ({
 							url: image.url,
 							alt: image.alt,
+							color: image.color,
 							position
 						}))
 					},

@@ -80,7 +80,13 @@ model ProductImage {
   alt       String?
   position  Int     @default(0)
 
+  /// Колір, якому належить фото — написання те саме, що в ProductVariant.color
+  /// (FK немає, звʼязок за текстом). NULL — спільне фото товару: сайт показує
+  /// його за будь-якого вибраного кольору.
+  color String?
+
   @@index([productId, position])
+  @@index([productId, color, position])
 }
 
 /// Конкретна одиниця товару: розмір + колір. Саме варіант має залишок і SKU,

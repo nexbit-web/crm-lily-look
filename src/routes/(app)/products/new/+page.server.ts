@@ -74,6 +74,7 @@ export const actions: Actions = {
 						create: input.images.map((image, position) => ({
 							url: image.url,
 							alt: image.alt,
+							color: image.color,
 							position
 						}))
 					},

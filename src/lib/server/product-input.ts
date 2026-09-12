@@ -2,7 +2,7 @@ import { isCloudinaryUrl } from './cloudinary';
 import { parseUahToKop } from '$lib/money';
 import { slugify } from '$lib/slug';
 
-type ImagePayload = { url: string; alt: string };
+type ImagePayload = { url: string; alt: string; color: string };
 type VariantPayload = {
 	id?: string;
 	sku: string;
@@ -50,7 +50,7 @@ export type ParsedProduct = {
 	price: number;
 	isActive: boolean;
 	isFeatured: boolean;
-	images: { url: string; alt: string | null }[];
+	images: { url: string; alt: string | null; color: string | null }[];
 	variants: ParsedVariant[];
 	measurements: ParsedMeasurement[];
 	attributes: ParsedAttribute[];
@@ -209,6 +209,37 @@ export function parseProductForm(form: FormData): ParseResult {
 		});
 	}
 
+	// Фото звʼязане з варіантом за текстом кольору, без FK. Тому написання
+	// мусить збігатися точно: фото з кольором, якого немає серед розмірів, на
+	// сайті не покажеться ніколи. Порожній колір — спільне фото товару.
+	const parsedImages = images.map((image) => ({
+		url: image.url,
+		alt: image.alt?.trim() || name,
+		color: image.color?.trim() || null
+	}));
+
+	// Коли самі розміри не пройшли перевірку, перелік кольорів неповний —
+	// скаржитись на фото тоді означало б показати помилку на порожньому місці.
+	if (!fieldErrors.variants && !fieldErrors.images) {
+		const byLower = new Map(
+			parsedVariants.map((variant) => [variant.color.toLowerCase(), variant.color])
+		);
+
+		for (const [index, image] of parsedImages.entries()) {
+			if (image.color === null) continue;
+
+			const exact = byLower.get(image.color.toLowerCase());
+			if (!exact) {
+				fieldErrors.images = `Фото #${index + 1}: кольору «${image.color}» немає серед розмірів`;
+				break;
+			}
+
+			// Підтягуємо написання варіанта: «чорний» і «Чорний» для текстового
+			// звʼязку — різні кольори.
+			image.color = exact;
+		}
+	}
+
 	// Характеристики теж необовʼязкові. Форма підставляє в новий товар назви
 	// стандартного набору з порожніми значеннями — рядок без значення це не
 	// помилка, а просто «цю характеристику не заповнили».
@@ -249,7 +280,7 @@ export function parseProductForm(form: FormData): ParseResult {
 			price: price!,
 			isActive,
 			isFeatured,
-			images: images.map((image) => ({ url: image.url, alt: image.alt?.trim() || name })),
+			images: parsedImages,
 			variants: parsedVariants,
 			measurements: parsedMeasurements,
 			attributes: parsedAttributes
