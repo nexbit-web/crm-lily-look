@@ -19,6 +19,7 @@
 	} from '$lib/cloudinary-upload';
 	import { slugify } from '$lib/slug';
 	import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
+	import { bySize } from '$lib/sizes';
 
 	/** Фото товару. `color` — до якого кольору воно належить; '' — спільне. */
 	export type ProductFormImage = { url: string; alt: string; color: string };
@@ -130,14 +131,16 @@
 		// назовні йде звичайний масив — реактивна мапа тут ні до чого.
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const groups = new Map<string, SizeGroup>();
-		const bySize = new Map(measurements.map((row) => [row.size.trim().toUpperCase(), row]));
+		const measurementBySize = new Map(
+			measurements.map((row) => [row.size.trim().toUpperCase(), row])
+		);
 
 		for (const variant of variants) {
 			const key = variant.size.trim().toUpperCase();
 			let group = groups.get(key);
 
 			if (!group) {
-				const row = bySize.get(key);
+				const row = measurementBySize.get(key);
 				group = {
 					size: variant.size,
 					ua: row?.ua ?? '',
@@ -166,7 +169,10 @@
 			groups.set(key, { ...row, colors: [emptyColor()] });
 		}
 
-		return [...groups.values()];
+		// Розміри показуємо за шкалою (XS перед XL), а кольори всередині —
+		// у тому порядку, у якому їх набрали: його тримає ProductVariant.position,
+		// і сервер віддає варіанти вже за ним.
+		return bySize([...groups.values()], (group) => group.size);
 	}
 
 	// Знімок пропса один раз: далі поля живуть своїм життям, поки користувач
@@ -218,10 +224,19 @@
 	const categoryLabel = $derived(categories.find((item) => item.id === categoryId)?.label);
 	const slugPreview = $derived(slugTouched ? slug : slugify(name));
 
+	/**
+	 * Порядок, у якому товар піде на сервер, і саме він стає `position` у базі.
+	 *
+	 * Сортуємо тут, а не в самому списку на екрані: рядок, який стрибає з-під
+	 * курсора щойно ви дописали «XS», дратує. Після збереження форма
+	 * перемонтовується вже відсортованою, тож результат видно одразу.
+	 */
+	const orderedSizes = $derived(bySize(sizes, (group) => group.size));
+
 	// На сервер їде та сама пласка структура, що й раніше: розмір із групи
 	// підставляється в кожен її рядок, тому розійтись їм ніде.
 	const variantsPayload = $derived(
-		sizes.flatMap((group) =>
+		orderedSizes.flatMap((group) =>
 			group.colors.map((color) => ({
 				id: color.id,
 				sku: color.sku,
@@ -234,7 +249,7 @@
 	);
 
 	const measurementsPayload = $derived(
-		sizes.map((group) => ({
+		orderedSizes.map((group) => ({
 			size: group.size,
 			ua: group.ua,
 			chest: group.chest,

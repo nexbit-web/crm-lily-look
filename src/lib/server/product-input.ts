@@ -27,6 +27,8 @@ export type ParsedVariant = {
 	color: string;
 	colorHex: string | null;
 	stock: number;
+	/** Порядок у картці: рівно той, у якому варіанти прийшли з форми. */
+	position: number;
 };
 
 export type ParsedMeasurement = {
@@ -150,13 +152,17 @@ export function parseProductForm(form: FormData): ParseResult {
 
 		// ProductVariant.price лишається NULL: у CRM ціна задається один раз
 		// на товар, окремої ціни за розмір чи колір у нас немає.
+		//
+		// position — довжина масиву, а не індекс циклу: цикл може перервати
+		// помилка, і тоді номери мусять лишитись без дірок.
 		parsedVariants.push({
 			id: variant.id,
 			sku: variant.sku?.trim() ?? '',
 			size,
 			color,
 			colorHex: variant.colorHex?.trim() || null,
-			stock
+			stock,
+			position: parsedVariants.length
 		});
 	}
 

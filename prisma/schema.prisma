@@ -113,11 +113,20 @@ model ProductVariant {
   /// Вимикач конкретного розміру/кольору в CRM.
   isActive   Boolean @default(true)
 
+  /// Порядок варіанта в картці товару.
+  ///
+  /// Без цієї колонки порядок кольорів ніде не зберігався: CRM читала варіанти
+  /// за алфавітом, і набране «Чорний, Білий» поверталося як «Білий, Чорний».
+  /// Розміри всередині товару впорядковані за шкалою (див. $lib/sizes),
+  /// кольори — так, як їх ввів менеджер.
+  position Int @default(0)
+
   cartItems CartItem[]
 
   @@unique([productId, size, color])
   @@index([productId])
   @@index([productId, isActive, stock])
+  @@index([productId, position])
 }
 
 /// Заміри готового виробу в сантиметрах — один рядок на розмір.

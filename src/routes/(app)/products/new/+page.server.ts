@@ -84,7 +84,8 @@ export const actions: Actions = {
 							size: variant.size,
 							color: variant.color,
 							colorHex: variant.colorHex,
-							stock: variant.stock
+							stock: variant.stock,
+							position: variant.position
 						}))
 					},
 					// Порядок рядків задає форма, а не сортування по розміру.

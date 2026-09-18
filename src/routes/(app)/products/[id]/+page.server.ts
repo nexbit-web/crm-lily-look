@@ -13,7 +13,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		where: { id: params.id },
 		include: {
 			images: { orderBy: { position: 'asc' } },
-			variants: { orderBy: [{ size: 'asc' }, { color: 'asc' }] },
+			// position — порядок, у якому варіанти набрали в CRM. size/color
+			// лишаються запасним ключем для рядків, створених до появи колонки.
+			variants: { orderBy: [{ position: 'asc' }, { size: 'asc' }, { color: 'asc' }] },
 			measurements: { orderBy: { position: 'asc' } },
 			attributes: { orderBy: { position: 'asc' } }
 		}
@@ -155,7 +157,8 @@ export const actions: Actions = {
 									// Окремої ціни за варіант у CRM більше немає: чистимо
 									// поле, щоб напевно діяла ціна товару.
 									price: null,
-									stock: variant.stock
+									stock: variant.stock,
+									position: variant.position
 								}
 							})),
 						create: input.variants
@@ -165,7 +168,8 @@ export const actions: Actions = {
 								size: variant.size,
 								color: variant.color,
 								colorHex: variant.colorHex,
-								stock: variant.stock
+								stock: variant.stock,
+								position: variant.position
 							}))
 					},
 					// Заміри ні з чим не звʼязані, тому їх, як і фото, простіше
