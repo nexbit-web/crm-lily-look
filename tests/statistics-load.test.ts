@@ -148,8 +148,21 @@ describe('сторінка статистики', () => {
 
 			expect(data.metrics.revenue.value).toBe(0);
 			expect(data.metrics.average.value).toBe(0);
-			expect(data.metrics.revenue.delta).toBeNull();
+			// Нуль проти нуля — це «без змін», а не невідомо скільки відсотків.
+			expect(data.metrics.revenue.delta).toBe(0);
 			expect(data.series.every((point) => point.revenue === 0)).toBe(true);
+		});
+
+		it('зростання з нуля не показує відсотків', async () => {
+			// Ділити на нуль немає на що: у картці має бути прочерк.
+			db.orderAggregate
+				.mockResolvedValueOnce({ _sum: { total: 100000 }, _count: { _all: 4 } })
+				.mockResolvedValueOnce({ _sum: { total: 0 }, _count: { _all: 0 } });
+
+			const data = await open('MANAGER');
+
+			expect(data.metrics.revenue.value).toBe(100000);
+			expect(data.metrics.revenue.delta).toBeNull();
 		});
 
 		it('середній чек рахується з виручки й кількості замовлень', async () => {

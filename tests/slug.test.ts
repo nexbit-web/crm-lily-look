@@ -16,7 +16,7 @@ describe('slugify', () => {
 			'../../etc/passwd',
 			'<script>alert(1)</script>',
 			'товар?id=1&x=2',
-			'a/b\c',
+			String.raw`a/b\c`,
 			'  --Кофта--  '
 		]) {
 			expect(slugify(input)).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$|^$/);

@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isHttpError, isRedirect } from '@sveltejs/kit';
 
+type Resolve = (event: unknown) => Promise<Response>;
+type Handle = (input: { event: unknown; resolve: Resolve }) => Promise<Response>;
+
 const { getSession, svelteKitHandler } = vi.hoisted(() => ({
 	getSession: vi.fn(),
-	svelteKitHandler: vi.fn(async ({ event, resolve }: { event: unknown; resolve: Function }) =>
+	// Справжній обробник better-auth тут ні до чого: перевіряємо власну
+	// перевірку доступу, а не чужу бібліотеку.
+	svelteKitHandler: vi.fn(({ event, resolve }: { event: unknown; resolve: Resolve }) =>
 		resolve(event)
 	)
 }));
@@ -27,7 +32,8 @@ function request(path: string, method = 'GET') {
 function run(path: string, method = 'GET') {
 	const ctx = request(path, method);
 	// Хук типізований під SvelteKit; у тесті достатньо тих полів, які він читає.
-	return { ctx, result: (handle as unknown as Function)({ event: ctx.event, resolve: ctx.resolve }) };
+	const hook = handle as unknown as Handle;
+	return { ctx, result: hook({ event: ctx.event, resolve: ctx.resolve }) };
 }
 
 /**
