@@ -72,7 +72,7 @@
 						<item.icon size={20} strokeWidth={active ? 2 : 1.8} aria-hidden="true" />
 						{#if badge > 0}
 							<span
-								class="absolute -top-1.5 -right-2 z-20 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-bold text-white ring-2 ring-[#0f0f12]"
+								class="absolute -top-1.5 -right-2 z-20 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-bold text-white ring-2 ring-[#0f0f12] dark:ring-card"
 								aria-hidden="true"
 							>
 								{badge > 9 ? '9+' : badge}

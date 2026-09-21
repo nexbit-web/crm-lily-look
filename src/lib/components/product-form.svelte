@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import toast from 'svelte-hot-french-toast';
-	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleQuestionMark } from '@lucide/svelte';
+	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleAlert } from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import SuggestInput from '$lib/components/suggest-input.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -446,7 +446,7 @@
 						<p class="truncate text-xs text-muted-foreground">/catalog/{slugPreview || '…'}</p>
 						{#if fieldErrors.name}
 							<p class="flex items-center gap-1.5 text-xs text-destructive">
-								<CircleQuestionMark size={13} class="shrink-0" />
+								<CircleAlert size={13} class="shrink-0" />
 								{fieldErrors.name}
 							</p>
 						{/if}
@@ -475,7 +475,7 @@
 							</Select.Root>
 							{#if fieldErrors.categoryId}
 								<p class="flex items-center gap-1.5 text-xs text-destructive">
-									<CircleQuestionMark size={13} class="shrink-0" />
+									<CircleAlert size={13} class="shrink-0" />
 									{fieldErrors.categoryId}
 								</p>
 							{/if}
@@ -496,7 +496,7 @@
 							/>
 							{#if fieldErrors.price}
 								<p class="flex items-center gap-1.5 text-xs text-destructive">
-									<CircleQuestionMark size={13} class="shrink-0" />
+									<CircleAlert size={13} class="shrink-0" />
 									{fieldErrors.price}
 								</p>
 							{/if}
@@ -515,7 +515,7 @@
 						/>
 						{#if fieldErrors.description}
 							<p class="flex items-center gap-1.5 text-xs text-destructive">
-								<CircleQuestionMark size={13} class="shrink-0" />
+								<CircleAlert size={13} class="shrink-0" />
 								{fieldErrors.description}
 							</p>
 						{/if}
@@ -577,7 +577,7 @@
 
 					{#if fieldErrors.attributes}
 						<p class="flex items-center gap-1.5 text-xs text-destructive">
-							<CircleQuestionMark size={13} class="shrink-0" />
+							<CircleAlert size={13} class="shrink-0" />
 							{fieldErrors.attributes}
 						</p>
 					{/if}
@@ -644,7 +644,7 @@
 
 			{#if fieldErrors.images}
 				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleQuestionMark size={13} class="shrink-0" />
+					<CircleAlert size={13} class="shrink-0" />
 					{fieldErrors.images}
 				</p>
 			{/if}
@@ -851,13 +851,13 @@
 
 			{#if fieldErrors.variants}
 				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleQuestionMark size={13} class="shrink-0" />
+					<CircleAlert size={13} class="shrink-0" />
 					{fieldErrors.variants}
 				</p>
 			{/if}
 			{#if fieldErrors.measurements}
 				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleQuestionMark size={13} class="shrink-0" />
+					<CircleAlert size={13} class="shrink-0" />
 					{fieldErrors.measurements}
 				</p>
 			{/if}

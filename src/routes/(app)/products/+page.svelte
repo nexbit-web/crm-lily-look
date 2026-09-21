@@ -88,7 +88,7 @@
 			<Spinner class="size-4 text-muted-foreground" />
 		{/if}
 
-		<Button href="/products/new" class="ml-auto rounded-full px-5">
+		<Button href="/products/new" class="ml-auto rounded-xl px-5">
 			<Plus size={16} />
 			Додати товар
 		</Button>
@@ -175,7 +175,7 @@
 				</Button>
 			{:else}
 				<p class="text-sm text-muted-foreground">Товарів ще немає.</p>
-				<Button href="/products/new" class="rounded-full px-5">
+				<Button href="/products/new" class="rounded-xl px-5">
 					<Plus size={16} />
 					Додати перший
 				</Button>

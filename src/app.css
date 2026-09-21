@@ -12,7 +12,8 @@
 	--card-foreground: oklch(0.145 0 0);
 	--popover: oklch(1 0 0);
 	--popover-foreground: oklch(0.145 0 0);
-	/* Синій Apple (#0071e3 з apple.com) — головна дія, посилання, вибране. */
+	/* Фірмовий синій — головна дія, посилання, вибране. Світліший за
+	   #0071e3 з apple.com, щоб однаково працювати і на білому, і на чорному. */
 	--primary: #119af5;
 	--primary-foreground: #ffffff;
 	--secondary: oklch(0.97 0 0);
@@ -24,7 +25,7 @@
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.922 0 0);
 	--input: oklch(0.922 0 0);
-	--ring: #0071e3;
+	--ring: #119af5;
 	--brand: #7209b7;
 	--chart-1: oklch(0.879 0.169 91.605);
 	--chart-2: oklch(0.769 0.188 70.08);
@@ -44,42 +45,61 @@
 	--sidebar-ring: oklch(0.85 0 0);
 }
 
+/* ─── Темна тема ────────────────────────────────────────────────────────────
+   Системна палітра Apple для темного режиму: нейтральні холодні сірі
+   (#1c1c1e → #48484a). Попередній варіант був теплим (#1a1a19, #272725), і
+   саме через це поруч із синім акцентом виглядав брудним.
+
+   Рівні поверхонь такі самі, як у macOS: що вище елемент, то він світліший.
+   Чорна сторінка → панель #1c1c1e → спливне меню #2c2c2e → підсвітка #3a3a3c.
+   Ніяких напівпрозорих білих накладок: вони дають сіру плівку. */
 .dark {
-	--background: #1a1a19;
-	--foreground: oklch(0.985 0 0);
-	--card: #272725;
-	--card-foreground: oklch(0.985 0 0);
-	--popover: oklch(0.205 0 0);
-	--popover-foreground: oklch(0.985 0 0);
-	/* На темному Apple бере світліший відтінок (#0a84ff), інакше синій глухне. */
+	/* Чистий чорний, як на apple.com уночі: панелі на ньому читаються як
+	   окремі площини, а не як плями на сірому. */
+	--background: #000000;
+	/* Не чисто білий — Apple пише текст саме таким, щоб не різало очі. */
+	--foreground: #f5f5f7;
+	--card: #1c1c1e;
+	--card-foreground: #f5f5f7;
+	/* Меню підняте над панеллю, тому світліше за неї. */
+	--popover: #2c2c2e;
+	--popover-foreground: #f5f5f7;
+	/* Той самий фірмовий синій, що й у світлій темі: він і так світліший за
+	   #0071e3, тож на чорному не глухне. */
 	--primary: #119af5;
 	--primary-foreground: #ffffff;
-	--secondary: oklch(0.269 0 0);
-	--secondary-foreground: oklch(0.985 0 0);
-	--muted: oklch(0.269 0 0);
-	--muted-foreground: oklch(0.708 0 0);
-	--accent: oklch(0.269 0 0);
-	--accent-foreground: oklch(0.985 0 0);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 15%);
-	--ring: #0a84ff;
+	--secondary: #2c2c2e;
+	--secondary-foreground: #f5f5f7;
+	--muted: #2c2c2e;
+	/* Другорядний текст — системний сірий; на #1c1c1e це контраст 5.4:1. */
+	--muted-foreground: #98989d;
+	/* Ховер і підсвічений пункт меню — на щабель світліші за саме меню. */
+	--accent: #3a3a3c;
+	--accent-foreground: #ffffff;
+	--destructive: #ff453a;
+	/* Роздільник непрозорий: білий з альфою на чорному давав сіру плівку й
+	   зникав на світліших поверхнях. */
+	--border: #38383a;
+	/* Рамка поля мусить бути помітнішою за роздільник — інакше порожнього
+	   інпута на темному тлі просто не видно. */
+	--input: #48484a;
+	--ring: #119af5;
 	--brand: #7209b7;
 	--chart-1: oklch(0.879 0.169 91.605);
 	--chart-2: oklch(0.769 0.188 70.08);
 	--chart-3: oklch(0.666 0.179 58.318);
 	--chart-4: oklch(0.555 0.163 48.998);
 	--chart-5: oklch(0.473 0.137 46.201);
-	--sidebar: oklch(
-		0.985 0 0
-	); /* білий (чистіше за 100% з chroma)  ← було oklch(100% 0.00011 271.152) */
-	--sidebar-foreground: oklch(0.145 0 0); /* темний текст + іконки  ← було 0.985 */
-	--sidebar-primary: oklch(0.205 0 0);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.97 0 0); /* ховер: ледь темніший за фон  ← було 0.269 */
-	--sidebar-accent-foreground: oklch(0.205 0 0);
-	--sidebar-border: oklch(0 0 0 / 10%);
-	--sidebar-ring: oklch(0.556 0 0);
+	/* Сайдбар у темній темі теж темний. Біла панель поруч із чорною сторінкою
+	   світила в очі й ламала всю ідею темного режиму. */
+	--sidebar: #1c1c1e;
+	--sidebar-foreground: #f5f5f7;
+	--sidebar-primary: #119af5;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #2c2c2e;
+	--sidebar-accent-foreground: #f5f5f7;
+	--sidebar-border: #38383a;
+	--sidebar-ring: #119af5;
 }
 
 @theme inline {
