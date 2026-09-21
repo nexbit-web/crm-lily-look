@@ -4,6 +4,7 @@
 	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleAlert } from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import SuggestInput from '$lib/components/suggest-input.svelte';
+	import PhotoViewer from '$lib/components/photo-viewer.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -209,6 +210,8 @@
 
 	let uploading = $state(0);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	/** Індекс фото, відкритого на весь екран; null — перегляд закритий. */
+	let viewing = $state<number | null>(null);
 
 	const LETTER_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 	/** Український (він же європейський) жіночий розмірний ряд. */
@@ -655,11 +658,18 @@
 				<div class="space-y-2">
 					{#each images as image, index (image.url)}
 						<div class="flex items-center gap-3 rounded-xl border border-border p-2">
-							<img
-								src={cloudinaryThumb(image.url, 96)}
-								alt={name || 'Фото товару'}
-								class="size-12 shrink-0 rounded-lg object-cover"
-							/>
+							<button
+								type="button"
+								class="shrink-0 cursor-zoom-in rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary"
+								aria-label="Переглянути фото на весь екран"
+								onclick={() => (viewing = index)}
+							>
+								<img
+									src={cloudinaryThumb(image.url, 96)}
+									alt={name || 'Фото товару'}
+									class="size-12 rounded-lg object-cover"
+								/>
+							</button>
 							{#if index === 0}
 								<Badge variant="secondary">Головне</Badge>
 							{:else}
@@ -893,6 +903,13 @@
 		</div>
 	</section>
 </div>
+
+<!-- Перегляд фото живе поза сіткою форми: він накриває весь екран. -->
+<PhotoViewer
+	urls={images.map((image) => image.url)}
+	bind:index={viewing}
+	alt={name || 'Фото товару'}
+/>
 
 <style>
 	/* Нативна піпетка як кругла крапля кольору: рамку, падінги й квадратний

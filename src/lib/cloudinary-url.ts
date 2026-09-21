@@ -22,3 +22,17 @@ export function cloudinaryThumb(url: string, size = 80): string {
 export function cloudinarySrcset(url: string, size: number): string {
 	return `${cloudinaryThumb(url, size)} 1x, ${cloudinaryThumb(url, size * 2)} 2x`;
 }
+
+/**
+ * Версія для перегляду на весь екран: вписати у квадрат `maxSide`, не
+ * обрізаючи й не збільшуючи (c_limit). Оригінал з телефона важить кілька
+ * мегабайтів — тягнути його заради перегляду в CRM немає сенсу.
+ */
+export function cloudinaryPreview(url: string, maxSide = 1600): string {
+	const marker = '/image/upload/';
+	const at = url.indexOf(marker);
+	if (at === -1) return url;
+
+	const transform = `w_${maxSide},h_${maxSide},c_limit,q_auto,f_auto/`;
+	return url.slice(0, at + marker.length) + transform + url.slice(at + marker.length);
+}
