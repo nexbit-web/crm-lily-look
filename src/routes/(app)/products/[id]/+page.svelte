@@ -41,41 +41,47 @@
 <svelte:head><title>{product.name} — CRM LILY LOOK</title></svelte:head>
 
 <!-- Панель дій приклеєна до верху скролу й напівпрозора: назва товару та
-     «Зберегти» лишаються під рукою, скільки б не було розмірів. -->
+     «Зберегти» лишаються під рукою, скільки б не було розмірів.
+
+     -top-6 — це не запас, а компенсація: у <main> є p-6, і приклеєний блок
+     браузер тримає на 24 px нижче видимого краю. Без мінуса над панеллю під
+     час прокрутки прозирала б смужка сторінки. -->
 <div
-	class="sticky -top-6 z-30 -mx-6 -mt-6 mb-6 border-b border-border/70 bg-card/95 px-6 pt-6 pb-3 backdrop-blur-xl"
+	class="sticky -top-6 z-30 -mx-6 -mt-6 mb-5 border-b border-border/70 bg-card/95 px-6 py-3 backdrop-blur-xl"
 >
-	<div class="mx-auto flex max-w-4xl items-center gap-3">
+	<div class="flex items-center gap-3">
 		<Button
 			href="/products"
 			variant="ghost"
-			size="icon"
-			class="-ml-2 shrink-0 rounded-full"
+			size="icon-sm"
+			class="-ml-1.5 shrink-0 rounded-full"
 			aria-label="Назад до списку"
 		>
-			<ChevronLeft size={18} />
+			<ChevronLeft size={17} />
 		</Button>
 
 		<div class="min-w-0 flex-1">
-			<h1 class="truncate text-[17px] leading-tight font-semibold tracking-tight">
+			<h1 class="truncate text-[15px] leading-tight font-semibold tracking-tight">
 				{product.name}
 			</h1>
-			<p class="truncate text-xs text-muted-foreground">/catalog/{product.slug}</p>
+			<p class="truncate text-[11px] leading-tight text-muted-foreground">
+				/catalog/{product.slug}
+			</p>
 		</div>
 
 		<Button
 			variant="ghost"
-			size="icon"
+			size="icon-sm"
 			aria-label="Видалити товар"
 			class="shrink-0 rounded-full text-muted-foreground hover:text-destructive"
 			onclick={() => (confirmOpen = true)}
 		>
-			<Trash2 size={17} />
+			<Trash2 size={16} />
 		</Button>
 		<Button
 			type="submit"
 			form="product-edit"
-			class="shrink-0 rounded-full px-5"
+			class="shrink-0 rounded-xl px-5"
 			disabled={submitting || Boolean(productForm?.isUploading())}
 		>
 			{#if submitting}<Spinner />{/if}
@@ -84,7 +90,7 @@
 	</div>
 </div>
 
-<div class="mx-auto max-w-4xl space-y-6 pb-12">
+<div class="space-y-6 pb-12">
 	<!-- Зведення: те, що рахує база і чого у формі немає. Значення попереду,
 	     підпис під ним — цифру видно з відстані, читати нічого не треба. -->
 	<div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-border/70 sm:grid-cols-4">
@@ -126,9 +132,7 @@
 				></span>
 				{product.isActive ? 'На сайті' : 'Схований'}
 			</p>
-			<p class="mt-1 truncate text-xs text-muted-foreground">
-				{product.isFeatured ? 'У добірці на головній' : 'Статус'}
-			</p>
+			<p class="mt-1 truncate text-xs text-muted-foreground">Статус</p>
 		</div>
 	</div>
 
@@ -167,12 +171,10 @@
 				{fieldErrors}
 				initial={{
 					name: product.name,
-					slug: product.slug,
 					description: product.description,
 					categoryId: product.categoryId,
 					price: product.price,
 					isActive: product.isActive,
-					isFeatured: product.isFeatured,
 					images: product.images,
 					variants: product.variants,
 					measurements: product.measurements,

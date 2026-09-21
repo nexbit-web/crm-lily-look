@@ -98,7 +98,7 @@
 
 <svelte:head><title>Замовлення — CRM LILY LOOK</title></svelte:head>
 
-<div class="mx-auto max-w-3xl space-y-5 pb-12">
+<div class="space-y-5 pb-12">
 	<div class="flex items-center gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Замовлення</h1>
 		<span class="text-2xl font-semibold tracking-tight text-muted-foreground/40">{data.total}</span>

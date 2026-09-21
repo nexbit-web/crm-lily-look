@@ -36,24 +36,24 @@
 	<!-- Та сама панель, що й на сторінці товару: перехід між «створити» та
 	     «редагувати» не мусить виглядати як інший застосунок. -->
 	<div
-		class="sticky -top-6 z-30 -mx-6 -mt-6 mb-6 border-b border-border/70 bg-card/95 px-6 pt-6 pb-3 backdrop-blur-xl"
+		class="sticky -top-6 z-30 -mx-6 -mt-6 mb-5 border-b border-border/70 bg-card/95 px-6 py-3 backdrop-blur-xl"
 	>
-		<div class="mx-auto flex max-w-4xl items-center gap-3">
+		<div class="flex items-center gap-3">
 			<Button
 				href="/products"
 				variant="ghost"
-				size="icon"
-				class="-ml-2 shrink-0 rounded-full"
+				size="icon-sm"
+				class="-ml-1.5 shrink-0 rounded-full"
 				aria-label="Назад до списку"
 			>
-				<ChevronLeft size={18} />
+				<ChevronLeft size={17} />
 			</Button>
 
-			<h1 class="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight">Новий товар</h1>
+			<h1 class="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">Новий товар</h1>
 
 			<Button
 				type="submit"
-				class="shrink-0 rounded-full px-5"
+				class="shrink-0 rounded-xl px-5"
 				disabled={submitting || Boolean(productForm?.isUploading())}
 			>
 				{#if submitting}<Spinner />{/if}
@@ -62,7 +62,7 @@
 		</div>
 	</div>
 
-	<div class="mx-auto max-w-4xl pb-12">
+	<div class="pb-12">
 		<ProductForm
 			bind:this={productForm}
 			categories={data.categories}

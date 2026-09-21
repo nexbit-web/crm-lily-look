@@ -51,7 +51,6 @@ export type ParsedProduct = {
 	categoryId: string;
 	price: number;
 	isActive: boolean;
-	isFeatured: boolean;
 	images: { url: string; alt: string | null; color: string | null }[];
 	variants: ParsedVariant[];
 	measurements: ParsedMeasurement[];
@@ -96,7 +95,6 @@ export function parseProductForm(form: FormData): ParseResult {
 	const priceRaw = String(form.get('price') ?? '').trim();
 	const slugRaw = String(form.get('slug') ?? '').trim();
 	const isActive = form.get('isActive') === 'on';
-	const isFeatured = form.get('isFeatured') === 'on';
 
 	const images = parseJson<ImagePayload>(form.get('images'));
 	const variants = parseJson<VariantPayload>(form.get('variants'));
@@ -285,7 +283,6 @@ export function parseProductForm(form: FormData): ParseResult {
 			categoryId,
 			price: price!,
 			isActive,
-			isFeatured,
 			images: parsedImages,
 			variants: parsedVariants,
 			measurements: parsedMeasurements,

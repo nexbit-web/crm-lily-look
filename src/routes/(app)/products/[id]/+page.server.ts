@@ -5,6 +5,7 @@ import { categoryOptions } from '$lib/server/categories';
 import { variantOptions } from '$lib/server/variant-options';
 import { attributeOptions } from '$lib/server/attribute-options';
 import { autoSku, parseProductForm } from '$lib/server/product-input';
+import { uniqueProductSlug } from '$lib/server/product-slug';
 import { kopToUahInput } from '$lib/money';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -44,7 +45,6 @@ export const load: PageServerLoad = async ({ params }) => {
 			finalPrice: product.finalPrice,
 			priceKop: product.price,
 			isActive: product.isActive,
-			isFeatured: product.isFeatured,
 			createdAt: product.createdAt,
 			updatedAt: product.updatedAt,
 			images: product.images.map((image) => ({
@@ -72,20 +72,6 @@ export const load: PageServerLoad = async ({ params }) => {
 	};
 };
 
-/** Той самий slug у іншого товару зайняти не можна. */
-async function uniqueSlug(base: string, exceptId: string): Promise<string> {
-	const fallback = base || 'tovar';
-	for (let suffix = 0; suffix < 50; suffix += 1) {
-		const candidate = suffix === 0 ? fallback : `${fallback}-${suffix + 1}`;
-		const taken = await prisma.product.findUnique({
-			where: { slug: candidate },
-			select: { id: true }
-		});
-		if (!taken || taken.id === exceptId) return candidate;
-	}
-	return `${fallback}-${Date.now()}`;
-}
-
 export const actions: Actions = {
 	save: async ({ request, params }) => {
 		const parsed = parseProductForm(await request.formData());
@@ -102,18 +88,7 @@ export const actions: Actions = {
 		});
 		if (!existing) error(404, 'Товар не знайдено');
 
-		const category = await prisma.category.findUnique({
-			where: { id: input.categoryId },
-			select: { id: true }
-		});
-		if (!category) {
-			return fail(400, {
-				message: 'Категорію не знайдено',
-				fieldErrors: { categoryId: 'Категорія більше не існує — оновіть сторінку' }
-			});
-		}
-
-		const slug = await uniqueSlug(input.slugBase, params.id);
+		const slug = await uniqueProductSlug(input.slugBase, params.id);
 
 		// Варіанти, що лишились у формі; решту видаляємо.
 		const knownIds = new Set(existing.variants.map((variant) => variant.id));
@@ -132,7 +107,6 @@ export const actions: Actions = {
 					price: input.price,
 					categoryId: input.categoryId,
 					isActive: input.isActive,
-					isFeatured: input.isFeatured,
 					// Фото простіше перезаписати: порядок задає сама форма.
 					images: {
 						deleteMany: {},
@@ -199,12 +173,30 @@ export const actions: Actions = {
 				select: { id: true }
 			});
 		} catch (err) {
-			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-				const target = Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'sku';
-				return fail(400, {
-					message: `Значення вже зайняте (${target}). Задайте SKU вручну.`,
-					fieldErrors: { variants: 'Такий SKU уже є в базі' }
-				});
+			if (err instanceof Prisma.PrismaClientKnownRequestError) {
+				// Категорію видалили, поки заповнювали форму: окремої перевірки
+				// перед записом немає навмисно — зайвий запит до бази на кожне
+				// збереження заради випадку, що трапляється раз на рік.
+				if (err.code === 'P2003') {
+					return fail(400, {
+						message: 'Категорію не знайдено',
+						fieldErrors: { categoryId: 'Категорія більше не існує — оновіть сторінку' }
+					});
+				}
+
+				if (err.code === 'P2002') {
+					const target = Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'sku';
+					if (target.includes('slug')) {
+						return fail(400, {
+							message: 'Товар із такою адресою щойно створили. Спробуйте зберегти ще раз.',
+							fieldErrors: {}
+						});
+					}
+					return fail(400, {
+						message: `Значення вже зайняте (${target}). Задайте SKU вручну.`,
+						fieldErrors: { variants: 'Такий SKU уже є в базі' }
+					});
+				}
 			}
 			throw err;
 		}

@@ -8,7 +8,7 @@
 
 <svelte:head><title>Дашборд — CRM LILY LOOK</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="space-y-6">
 	<div class="flex items-center gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Дашборд</h1>
 		<Badge variant="secondary">{data.user?.role ?? 'MANAGER'}</Badge>

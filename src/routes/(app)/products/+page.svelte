@@ -3,16 +3,14 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { navigating, page as pageState } from '$app/state';
-	import { Plus, ImageOff, Search, X } from '@lucide/svelte';
-	import * as Table from '$lib/components/ui/table/index.js';
+	import { Plus, ImageOff, Search, X, Shirt, Check } from '@lucide/svelte';
 	import * as Pagination from '$lib/components/ui/pagination/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { formatUah } from '$lib/money';
-	import { cloudinaryThumb } from '$lib/cloudinary-url';
+	import { cloudinaryThumb, cloudinarySrcset } from '$lib/cloudinary-url';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -20,17 +18,29 @@
 	// Знімок: далі поле живе своїм життям, поки менеджер друкує.
 	let search = $state(untrack(() => data.query));
 
-	const SORT_LABELS: Record<string, string> = {
-		created: 'Спочатку нові',
-		name: 'За назвою',
-		'price-asc': 'Ціна: спершу дешеві',
-		'price-desc': 'Ціна: спершу дорогі'
-	};
+	// Короткі підписи: чипси читаються з одного погляду, на відміну від
+	// випадайки, яка ховає і вибір, і решту варіантів.
+	const SORTS: { key: string; label: string }[] = [
+		{ key: 'created', label: 'Найновіші' },
+		{ key: 'name', label: 'За назвою' },
+		{ key: 'price-asc', label: 'Дешевші' },
+		{ key: 'price-desc', label: 'Дорожчі' }
+	];
 
-	// Спінер показуємо лише коли перезавантажується саме цей список.
+	/** Мініатюра в рядку — 40 CSS-пікселів. */
+	const THUMB = 40;
+
 	const loading = $derived(navigating.to?.url.pathname === '/products');
 	const from = $derived(data.total === 0 ? 0 : (data.page - 1) * data.perPage + 1);
 	const to = $derived(Math.min(data.page * data.perPage, data.total));
+	const allCount = $derived(
+		data.categories.reduce((sum, item) => sum + (item.isChild ? 0 : item.count), 0)
+	);
+	const categoryLabel = $derived(
+		data.category
+			? (data.categories.find((item) => item.id === data.category)?.name ?? 'Категорія')
+			: 'Усі категорії'
+	);
 
 	/** Змінює один параметр URL, зберігаючи решту; сторінку скидає на першу. */
 	function navigate(changes: Record<string, string | null>, resetPage = true) {
@@ -43,192 +53,205 @@
 		const qs = params.toString();
 		goto(qs ? `/products?${qs}` : '/products', { keepFocus: true, noScroll: true });
 	}
+
+	function clearSearch() {
+		search = '';
+		if (data.query) navigate({ q: null });
+	}
 </script>
 
 <svelte:head><title>Товари — CRM LILY LOOK</title></svelte:head>
 
-<div class="space-y-6">
+{#snippet chip(label: string, active: boolean, onclick: () => void)}
+	<!-- Вибране — синя заливка з білою галочкою поряд із текстом. -->
+	<button
+		type="button"
+		aria-pressed={active}
+		class="flex items-center gap-1 rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors {active
+			? 'bg-primary text-primary-foreground'
+			: 'bg-muted/60 text-muted-foreground hover:text-foreground'}"
+		{onclick}
+	>
+		{#if active}
+			<!-- Колір не задаємо: галочка успадковує білий текст кнопки. -->
+			<Check size={13} strokeWidth={2.5} />
+		{/if}
+		{label}
+	</button>
+{/snippet}
+
+<div class="space-y-5 pb-12">
 	<div class="flex flex-wrap items-center gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Товари</h1>
-		<Badge variant="secondary">{data.total}</Badge>
+		<span class="text-2xl font-semibold tracking-tight text-muted-foreground/40">{data.total}</span>
+		{#if loading}
+			<Spinner class="size-4 text-muted-foreground" />
+		{/if}
 
-		<Button href="/products/new" class="ml-auto">
+		<Button href="/products/new" class="ml-auto rounded-full px-5">
 			<Plus size={16} />
 			Додати товар
 		</Button>
 	</div>
 
-	<div class="flex flex-wrap items-center gap-2">
-		<form
-			class="relative flex-1 sm:max-w-xs"
-			onsubmit={(event) => {
-				event.preventDefault();
-				navigate({ q: search });
-			}}
-		>
-			<Search
-				size={16}
-				class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
-			/>
-			<Input bind:value={search} placeholder="Назва, адреса або SKU" class="pl-8" />
-			{#if data.query}
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon"
-					class="absolute top-1/2 right-1 size-7 -translate-y-1/2"
-					aria-label="Очистити пошук"
-					onclick={() => {
-						search = '';
-						navigate({ q: null });
-					}}
-				>
-					<X size={14} />
-				</Button>
-			{/if}
-		</form>
+	<form
+		class="relative"
+		onsubmit={(event) => {
+			event.preventDefault();
+			navigate({ q: search });
+		}}
+	>
+		<Search
+			size={16}
+			class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground/60"
+		/>
+		<!-- Фокус — рамка 2 px кольору акценту замість тіні: на світлому тлі
+		     видно одразу, куди ви друкуєте. -->
+		<Input
+			bind:value={search}
+			placeholder="Назва, адреса або SKU"
+			class="h-10 rounded-xl border-0 bg-muted/60 pr-10 pl-9 shadow-none focus-visible:border-transparent focus-visible:ring-[1.5px] focus-visible:ring-primary"
+		/>
+		{#if search}
+			<button
+				type="button"
+				aria-label="Очистити пошук"
+				class="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+				onclick={clearSearch}
+			>
+				<X size={14} />
+			</button>
+		{/if}
+	</form>
 
+	<div class="flex flex-wrap items-center gap-1.5">
+		<!-- Категорій буває багато, тому вони у випадайці зі скролом, а не в
+		     рядку чипсів: інакше фільтр займав би пів екрана. -->
 		<Select.Root
 			type="single"
-			value={data.sort}
-			onValueChange={(value) => navigate({ sort: value })}
+			value={data.category ?? ''}
+			onValueChange={(value) => navigate({ category: value || null })}
 		>
-			<Select.Trigger class="h-9 w-50">{SORT_LABELS[data.sort]}</Select.Trigger>
-			<Select.Content>
-				{#each Object.entries(SORT_LABELS) as [value, label] (value)}
-					<Select.Item {value} {label}>{label}</Select.Item>
+			<Select.Trigger
+				class="h-[30px] w-auto gap-1.5 rounded-[10px] border-0 bg-muted/60 px-3 text-xs font-medium shadow-none data-[state=open]:bg-muted {data.category
+					? 'text-foreground'
+					: 'text-muted-foreground'}"
+			>
+				{categoryLabel}
+			</Select.Trigger>
+			<Select.Content class="max-h-50" align="start">
+				<Select.Item value="" label="Усі категорії">
+					Усі категорії
+					<span class="ml-auto text-muted-foreground tabular-nums">{allCount}</span>
+				</Select.Item>
+				{#each data.categories as item (item.id)}
+					<Select.Item value={item.id} label={item.name} class={item.isChild ? 'pl-5' : ''}>
+						{item.name}
+						<span class="ml-auto text-muted-foreground tabular-nums">{item.count}</span>
+					</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
 
-		{#if loading}
-			<span class="flex items-center gap-2 text-xs text-muted-foreground">
-				<Spinner />
-				Завантаження…
-			</span>
-		{/if}
+		{#each SORTS as option (option.key)}
+			{@render chip(option.label, data.sort === option.key, () => navigate({ sort: option.key }))}
+		{/each}
 	</div>
 
 	{#if data.products.length === 0}
-		<div class="rounded-xl border border-dashed p-12 text-center text-muted-foreground">
-			{#if data.query}
-				<p class="text-sm">За запитом «{data.query}» нічого не знайшлось.</p>
+		<div class="flex flex-col items-center gap-4 rounded-[20px] bg-muted/50 px-6 py-16 text-center">
+			<Shirt size={28} class="text-muted-foreground/40" />
+			{#if data.query || data.category}
+				<p class="text-sm text-muted-foreground">За цим фільтром нічого не знайшлось.</p>
 				<Button
-					variant="outline"
-					class="mt-4"
+					variant="ghost"
+					class="rounded-full text-primary hover:text-primary"
 					onclick={() => {
 						search = '';
-						navigate({ q: null });
+						navigate({ q: null, category: null });
 					}}
 				>
-					Скинути пошук
+					Скинути фільтри
 				</Button>
 			{:else}
-				<p class="text-sm">Товарів ще немає.</p>
-				<Button href="/products/new" variant="outline" class="mt-4">
+				<p class="text-sm text-muted-foreground">Товарів ще немає.</p>
+				<Button href="/products/new" class="rounded-full px-5">
 					<Plus size={16} />
 					Додати перший
 				</Button>
 			{/if}
 		</div>
 	{:else}
-		<div class="relative overflow-x-auto rounded-xl border">
-			{#if loading}
-				<div class="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16">
-					<Spinner class="size-6" />
-				</div>
-			{/if}
+		<div class="overflow-hidden rounded-[14px]">
+			<div class="row head text-xs text-muted-foreground">
+				<span>Товар</span>
+				<span class="col-category">Категорія</span>
+				<span class="text-right">Ціна</span>
+				<span class="col-stock text-right">Залишок</span>
+			</div>
 
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="w-16">Фото</Table.Head>
-						<Table.Head>Назва</Table.Head>
-						<Table.Head>Категорія</Table.Head>
-						<Table.Head class="text-right">Ціна</Table.Head>
-						<Table.Head class="text-right">Кількість</Table.Head>
-						<Table.Head>Статус</Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each data.products as product (product.id)}
-						<!-- Клік по рядку веде на товар, але клік по назві лишаємо
-						     посиланню. Гасити подію на самому <a> не можна: роутер
-						     SvelteKit слухає клік на document, і зупинка спливання
-						     змушувала браузер перезавантажити сторінку замість переходу. -->
-						<Table.Row
-							class="cursor-pointer hover:bg-muted/50"
-							onclick={(event) => {
-								if (event.target instanceof Element && event.target.closest('a')) return;
-								goto(`/products/${product.id}`);
-							}}
-						>
-							<Table.Cell>
-								{#if product.image}
-									<img
-										src={cloudinaryThumb(product.image.url, 48)}
-										alt={product.image.alt ?? product.name}
-										class="size-12 rounded-md object-cover"
-										loading="lazy"
-									/>
-								{:else}
-									<div
-										class="flex size-12 items-center justify-center rounded-md bg-muted text-muted-foreground"
-									>
-										<ImageOff size={16} />
-									</div>
-								{/if}
-							</Table.Cell>
-
-							<Table.Cell>
-								<a href={`/products/${product.id}`} class="font-medium hover:underline">
-									{product.name}
-								</a>
-								<p class="text-xs text-muted-foreground">/{product.slug}</p>
-							</Table.Cell>
-
-							<Table.Cell class="text-sm">{product.categoryName}</Table.Cell>
-
-							<Table.Cell class="text-right whitespace-nowrap">
-								{#if product.finalPrice > 0 && product.finalPrice < product.price}
-									<span class="text-xs text-muted-foreground line-through">
-										{formatUah(product.price)}
-									</span>
-									<span class="ml-1 font-medium">{formatUah(product.finalPrice)}</span>
-								{:else}
-									<span class="font-medium">{formatUah(product.price)}</span>
-								{/if}
-							</Table.Cell>
-
-							<Table.Cell class="text-right">
-								<span class={product.stock === 0 ? 'font-medium text-destructive' : ''}>
-									{product.stock}
+			<div class="body">
+				{#each data.products as product (product.id)}
+					{@const discounted = product.finalPrice > 0 && product.finalPrice < product.price}
+					<!-- Рядок цілком — посилання, а не <tr> з onclick: працюють середня
+					     кнопка, «відкрити в новій вкладці» й прелоад на ховер, і не
+					     потрібен жоден обробник у JS. -->
+					<a
+						href="/products/{product.id}"
+						class="row outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+					>
+						<span class="flex min-w-0 items-center gap-3">
+							{#if product.imageUrl}
+								<img
+									src={cloudinaryThumb(product.imageUrl, THUMB)}
+									srcset={cloudinarySrcset(product.imageUrl, THUMB)}
+									alt=""
+									width={THUMB}
+									height={THUMB}
+									loading="lazy"
+									decoding="async"
+									class="size-10 shrink-0 rounded-lg bg-foreground/5 object-cover"
+								/>
+							{:else}
+								<span
+									class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground/50"
+								>
+									<ImageOff size={15} />
 								</span>
-								<span class="text-xs text-muted-foreground"> / {product.variantCount} розм.</span>
-							</Table.Cell>
+							{/if}
+							<span class="truncate text-sm {product.isActive ? '' : 'text-muted-foreground'}">
+								{product.name}
+							</span>
+						</span>
 
-							<Table.Cell>
-								<div class="flex flex-wrap gap-1">
-									{#if product.isActive}
-										<Badge variant="secondary">Активний</Badge>
-									{:else}
-										<Badge variant="outline">Схований</Badge>
-									{/if}
-									{#if product.isFeatured}
-										<Badge>Топ</Badge>
-									{/if}
-								</div>
-							</Table.Cell>
-						</Table.Row>
-					{/each}
-				</Table.Body>
-			</Table.Root>
+						<span class="col-category truncate text-sm text-muted-foreground">
+							{product.categoryName}
+						</span>
+
+						<span class="text-right text-sm tabular-nums">
+							{#if discounted}
+								<span class="text-xs text-muted-foreground line-through">
+									{formatUah(product.price)}
+								</span>
+								<br />
+							{/if}
+							{formatUah(discounted ? product.finalPrice : product.price)}
+						</span>
+
+						<span
+							class="col-stock text-right text-sm tabular-nums {product.stock === 0
+								? 'text-destructive'
+								: 'text-muted-foreground'}"
+						>
+							{product.stock === 0 ? 'Немає' : `${product.stock} шт`}
+						</span>
+					</a>
+				{/each}
+			</div>
 		</div>
 
 		<div class="flex flex-wrap items-center justify-between gap-3">
-			<p class="text-xs text-muted-foreground">
-				Показано {from}–{to} з {data.total}
-			</p>
+			<p class="text-xs text-muted-foreground">Показано {from}–{to} з {data.total}</p>
 
 			{#if data.pageCount > 1}
 				<Pagination.Root
@@ -240,14 +263,10 @@
 				>
 					{#snippet children({ pages, currentPage })}
 						<Pagination.Content>
-							<Pagination.Item>
-								<Pagination.PrevButton />
-							</Pagination.Item>
+							<Pagination.Item><Pagination.PrevButton /></Pagination.Item>
 							{#each pages as pageItem (pageItem.key)}
 								{#if pageItem.type === 'ellipsis'}
-									<Pagination.Item>
-										<Pagination.Ellipsis />
-									</Pagination.Item>
+									<Pagination.Item><Pagination.Ellipsis /></Pagination.Item>
 								{:else}
 									<Pagination.Item>
 										<Pagination.Link page={pageItem} isActive={currentPage === pageItem.value}>
@@ -256,9 +275,7 @@
 									</Pagination.Item>
 								{/if}
 							{/each}
-							<Pagination.Item>
-								<Pagination.NextButton />
-							</Pagination.Item>
+							<Pagination.Item><Pagination.NextButton /></Pagination.Item>
 						</Pagination.Content>
 					{/snippet}
 				</Pagination.Root>
@@ -266,3 +283,49 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Список як у Finder: колонки однієї ширини в шапці й рядках, смужки
+	   через рядок і жодних рамок. Сітка живе тут, а не в класах Tailwind,
+	   щоб шапка й рядок не могли розʼїхатись через правку в одному місці. */
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 6.5rem 5.5rem;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.col-category {
+		display: none;
+	}
+
+	@media (min-width: 880px) {
+		.row {
+			grid-template-columns: minmax(0, 1fr) 11rem 7rem 6rem;
+		}
+		.col-category {
+			display: block;
+		}
+	}
+
+	.head {
+		padding-bottom: 0.4rem;
+		border-bottom: 1px solid var(--border);
+	}
+
+	/* Роздільники між заголовками колонок — як у Finder. */
+	.head > span + span {
+		border-left: 1px solid var(--border);
+		padding-left: 0.75rem;
+		margin-left: -0.75rem;
+	}
+
+	.body > :global(a:nth-child(odd)) {
+		background: color-mix(in oklab, var(--muted) 45%, transparent);
+	}
+
+	.body > :global(a:hover) {
+		background: color-mix(in oklab, var(--primary) 8%, transparent);
+	}
+</style>

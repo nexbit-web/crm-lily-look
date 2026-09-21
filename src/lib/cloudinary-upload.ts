@@ -55,3 +55,27 @@ export async function uploadToCloudinary(
 
 	return result.secure_url as string;
 }
+
+/**
+ * Видаляє файл із Cloudinary. Кидає помилку з текстом для toast.
+ *
+ * Викликається одразу на хрестик у формі: інакше кожне «завантажив не те»
+ * лишало б на платформі файл, на який уже ніхто не посилається.
+ */
+export async function deleteFromCloudinary(url: string): Promise<void> {
+	let res: Response;
+	try {
+		res = await fetch('/api/uploads/delete', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ url })
+		});
+	} catch {
+		throw new Error('Не вдалося звʼязатися з сервером');
+	}
+
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({ message: '' }));
+		throw new Error(body.message || 'Не вдалося видалити файл');
+	}
+}

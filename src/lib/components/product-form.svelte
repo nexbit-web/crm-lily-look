@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import toast from 'svelte-hot-french-toast';
-	import { Upload, ArrowUp, ArrowDown, Plus, Star, X } from '@lucide/svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
+	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleQuestionMark } from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import SuggestInput from '$lib/components/suggest-input.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -15,6 +15,7 @@
 	import {
 		cloudinarySignature,
 		uploadToCloudinary,
+		deleteFromCloudinary,
 		type CloudinarySignature
 	} from '$lib/cloudinary-upload';
 	import { slugify } from '$lib/slug';
@@ -46,12 +47,10 @@
 	};
 	export type ProductFormValues = {
 		name: string;
-		slug: string;
 		description: string;
 		categoryId: string;
 		price: string;
 		isActive: boolean;
-		isFeatured: boolean;
 		images: ProductFormImage[];
 		variants: ProductFormVariant[];
 		measurements: ProductFormMeasurement[];
@@ -180,12 +179,10 @@
 	// перемонтовує компонент через {#key}.
 	const seed = untrack(() => ({
 		name: initial?.name ?? '',
-		slug: initial?.slug ?? '',
 		description: initial?.description ?? '',
 		categoryId: initial?.categoryId ?? '',
 		price: initial?.price ?? '',
 		isActive: initial?.isActive ?? true,
-		isFeatured: initial?.isFeatured ?? false,
 		images: initial?.images
 			? initial.images.map((image) => ({ ...image, color: image.color ?? '' }))
 			: [],
@@ -202,14 +199,10 @@
 	}));
 
 	let name = $state(seed.name);
-	// Для наявного товару slug уже є — його не перегенеровуємо з назви.
-	let slug = $state(seed.slug);
-	let slugTouched = $state(seed.slug !== '');
 	let description = $state(seed.description);
 	let categoryId = $state(seed.categoryId);
 	let price = $state(seed.price);
 	let isActive = $state(seed.isActive);
-	let isFeatured = $state(seed.isFeatured);
 	let images = $state<ProductFormImage[]>(seed.images);
 	let sizes = $state<SizeGroup[]>(seed.sizes);
 	let attributes = $state<ProductFormAttribute[]>(seed.attributes);
@@ -222,7 +215,10 @@
 	const UA_SIZES = ['38', '40', '42', '44', '46', '48', '50', '52', '54'];
 
 	const categoryLabel = $derived(categories.find((item) => item.id === categoryId)?.label);
-	const slugPreview = $derived(slugTouched ? slug : slugify(name));
+	// Адреса завжди йде за назвою — і в новому товарі, і при перейменуванні.
+	// Окремого поля немає навмисно: два джерела правди тут нічого не дають,
+	// а розсинхрон між назвою та адресою помітний одразу.
+	const slugPreview = $derived(slugify(name));
 
 	/**
 	 * Порядок, у якому товар піде на сервер, і саме він стає `position` у базі.
@@ -283,6 +279,13 @@
 		...new Set([...sizeOptions, ...LETTER_SIZES, ...UA_SIZES].map((size) => size.trim()))
 	]);
 
+	// Списки для меню в полях. Рахуємо один раз, а не в кожному рядку розмірів:
+	// їх на сторінці може бути десяток, а набір значень усюди той самий.
+	const sizeMenu = $derived(sizeSuggestions.map((size) => ({ value: size })));
+	const colorMenu = $derived(
+		colorOptions.map((option) => ({ value: option.color, hex: option.colorHex }))
+	);
+
 	/** Кнопка «Зберегти» в батьківській сторінці не має тиснутись під час аплоаду. */
 	export function isUploading() {
 		return uploading > 0;
@@ -314,6 +317,25 @@
 		}
 
 		if (fileInput) fileInput.value = '';
+	}
+
+	/**
+	 * Хрестик прибирає фото і з форми, і з Cloudinary.
+	 *
+	 * Спершу з форми — інтерфейс не мусить чекати на мережу; якщо видалення
+	 * на платформі не вдалось, повертаємо рядок назад, щоб стан форми не
+	 * розійшовся з тим, що реально лежить у сховищі.
+	 */
+	async function removeImage(index: number) {
+		const [removed] = images.splice(index, 1);
+		if (!removed) return;
+
+		try {
+			await deleteFromCloudinary(removed.url);
+		} catch (err) {
+			images.splice(index, 0, removed);
+			toast.error(err instanceof Error ? err.message : 'Не вдалося видалити фото');
+		}
 	}
 
 	function moveImage(index: number, delta: number) {
@@ -395,191 +417,211 @@
 <input type="hidden" name="measurements" value={JSON.stringify(measurementsPayload)} />
 <input type="hidden" name="attributes" value={JSON.stringify(attributes)} />
 
-<div class="space-y-6">
-	<Card.Root class="rounded-2xl">
-		<Card.Header>
-			<Card.Title>Основне</Card.Title>
-		</Card.Header>
-		<Card.Content class="space-y-5">
-			<div class="space-y-2">
-				<Label for="pf-name">Назва</Label>
-				<Input
-					id="pf-name"
-					name="name"
-					bind:value={name}
-					placeholder="Сукня вечірня «Лілея»"
-					class="h-10"
-					aria-invalid={fieldErrors.name ? 'true' : undefined}
-					required
-				/>
-				<!-- Адресу на сайті складаємо з назви, тож редагувати нема чого:
+<div class="space-y-8">
+	<!-- Дві колонки: ліворуч те, що описує товар, праворуч — фото.
+	     Розміри лишаються на всю ширину: шість полів у половині екрана
+	     перетворюються на нечитабельну сітку. -->
+	<div class="grid gap-x-10 gap-y-8 lg:grid-cols-2 lg:items-start">
+		<div class="space-y-8">
+			<section class="space-y-4">
+				<div class="space-y-1">
+					<h2 class="text-[15px] font-semibold tracking-tight">Основне</h2>
+				</div>
+				<div class="space-y-5">
+					<div class="space-y-2">
+						<Label for="pf-name">Назва</Label>
+						<Input
+							id="pf-name"
+							name="name"
+							bind:value={name}
+							placeholder="Сукня вечірня «Лілея»"
+							class="h-10"
+							aria-invalid={fieldErrors.name ? 'true' : undefined}
+						/>
+						<!-- Без native required: інакше браузер показав би власну підказку
+						     й наші повідомлення з поясненням не зʼявились би взагалі.
+						     Усі перевірки живуть на сервері, в одному місці. -->
+						<!-- Адресу на сайті складаємо з назви, тож редагувати нема чого:
 				     показуємо результат, а на сервер він їде прихованим полем. -->
-				<p class="truncate text-xs text-muted-foreground">/catalog/{slugPreview || '…'}</p>
-				{#if fieldErrors.name}
-					<p class="text-xs text-destructive">{fieldErrors.name}</p>
-				{/if}
-			</div>
+						<p class="truncate text-xs text-muted-foreground">/catalog/{slugPreview || '…'}</p>
+						{#if fieldErrors.name}
+							<p class="flex items-center gap-1.5 text-xs text-destructive">
+								<CircleQuestionMark size={13} class="shrink-0" />
+								{fieldErrors.name}
+							</p>
+						{/if}
+					</div>
 
-			<div class="grid gap-5 md:grid-cols-2">
+					<div class="space-y-4">
+						<div class="space-y-2">
+							<Label for="pf-category">Категорія</Label>
+							<Select.Root type="single" name="categoryId" bind:value={categoryId}>
+								<Select.Trigger
+									id="pf-category"
+									class="h-10 w-full"
+									aria-invalid={fieldErrors.categoryId ? 'true' : undefined}
+								>
+									{categoryLabel ?? 'Виберіть категорію'}
+								</Select.Trigger>
+								<!-- Не більше шести рядків на екран: категорій уже десятки,
+								     далі список гортається. -->
+								<Select.Content class="max-h-50">
+									{#each categories as category (category.id)}
+										<Select.Item value={category.id} label={category.label}>
+											{category.label}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							{#if fieldErrors.categoryId}
+								<p class="flex items-center gap-1.5 text-xs text-destructive">
+									<CircleQuestionMark size={13} class="shrink-0" />
+									{fieldErrors.categoryId}
+								</p>
+							{/if}
+						</div>
+
+						<div class="space-y-2">
+							<Label for="pf-price">
+								Ціна, ₴ <span class="font-normal text-muted-foreground">до знижок</span>
+							</Label>
+							<Input
+								id="pf-price"
+								name="price"
+								bind:value={price}
+								inputmode="decimal"
+								placeholder="1299.00"
+								class="h-10"
+								aria-invalid={fieldErrors.price ? 'true' : undefined}
+							/>
+							{#if fieldErrors.price}
+								<p class="flex items-center gap-1.5 text-xs text-destructive">
+									<CircleQuestionMark size={13} class="shrink-0" />
+									{fieldErrors.price}
+								</p>
+							{/if}
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="pf-description">Опис</Label>
+						<Textarea
+							id="pf-description"
+							name="description"
+							bind:value={description}
+							rows={5}
+							placeholder="Тканина, посадка, догляд…"
+							aria-invalid={fieldErrors.description ? 'true' : undefined}
+						/>
+						{#if fieldErrors.description}
+							<p class="flex items-center gap-1.5 text-xs text-destructive">
+								<CircleQuestionMark size={13} class="shrink-0" />
+								{fieldErrors.description}
+							</p>
+						{/if}
+					</div>
+
+					<div class="flex items-center gap-2 border-t border-foreground/10 pt-5">
+						<Checkbox id="pf-active" name="isActive" value="on" bind:checked={isActive} />
+						<Label for="pf-active" class="font-normal">Показувати на сайті</Label>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		<div class="space-y-8">
+			<section class="space-y-4">
+				<div class="space-y-1">
+					<h2 class="text-[15px] font-semibold tracking-tight">Характеристики</h2>
+					<p class="text-xs text-muted-foreground">
+						Таблиця під описом товару на сайті. Порожні рядки не зберігаються.
+					</p>
+				</div>
 				<div class="space-y-2">
-					<Label for="pf-category">Категорія</Label>
-					<Select.Root type="single" name="categoryId" bind:value={categoryId}>
-						<Select.Trigger
-							id="pf-category"
-							class="h-10 w-full"
-							aria-invalid={fieldErrors.categoryId ? 'true' : undefined}
-						>
-							{categoryLabel ?? 'Виберіть категорію'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each categories as category (category.id)}
-								<Select.Item value={category.id} label={category.label}>
-									{category.label}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					{#if fieldErrors.categoryId}
-						<p class="text-xs text-destructive">{fieldErrors.categoryId}</p>
+					<div
+						class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] gap-3 px-1 text-xs text-muted-foreground"
+					>
+						<span>Назва</span>
+						<span>Значення</span>
+						<span></span>
+					</div>
+
+					{#each attributes as attribute, index (index)}
+						<div class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] items-center gap-3">
+							<Input
+								bind:value={attribute.name}
+								placeholder="Склад"
+								class="h-10 font-medium"
+								list="pf-attr-names"
+							/>
+							<!-- Список значень залежить від назви в сусідньому полі: для
+				     «Посадки» це три варіанти, для «Складу» — шпаргалка. -->
+							<Input
+								bind:value={attribute.value}
+								placeholder="95% віскоза, 5% еластан"
+								class="h-10"
+								list={attributeListId(attribute.name)}
+							/>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								class="size-8 text-muted-foreground hover:text-destructive"
+								aria-label="Видалити характеристику"
+								onclick={() => attributes.splice(index, 1)}
+							>
+								<X size={15} />
+							</Button>
+						</div>
+					{/each}
+
+					{#if fieldErrors.attributes}
+						<p class="flex items-center gap-1.5 text-xs text-destructive">
+							<CircleQuestionMark size={13} class="shrink-0" />
+							{fieldErrors.attributes}
+						</p>
 					{/if}
-				</div>
 
-				<div class="space-y-2">
-					<Label for="pf-price">
-						Ціна, ₴ <span class="font-normal text-muted-foreground">до знижок</span>
-					</Label>
-					<Input
-						id="pf-price"
-						name="price"
-						bind:value={price}
-						inputmode="decimal"
-						placeholder="1299.00"
-						class="h-10"
-						aria-invalid={fieldErrors.price ? 'true' : undefined}
-						required
-					/>
-					{#if fieldErrors.price}
-						<p class="text-xs text-destructive">{fieldErrors.price}</p>
-					{/if}
-				</div>
-			</div>
-
-			<div class="space-y-2">
-				<Label for="pf-description">Опис</Label>
-				<Textarea
-					id="pf-description"
-					name="description"
-					bind:value={description}
-					rows={5}
-					placeholder="Тканина, посадка, догляд…"
-					aria-invalid={fieldErrors.description ? 'true' : undefined}
-				/>
-				{#if fieldErrors.description}
-					<p class="text-xs text-destructive">{fieldErrors.description}</p>
-				{/if}
-			</div>
-
-			<div class="flex flex-wrap gap-x-8 gap-y-3 border-t pt-5">
-				<div class="flex items-center gap-2">
-					<Checkbox id="pf-active" name="isActive" value="on" bind:checked={isActive} />
-					<Label for="pf-active" class="font-normal">Показувати на сайті</Label>
-				</div>
-				<div class="flex items-center gap-2">
-					<Checkbox id="pf-featured" name="isFeatured" value="on" bind:checked={isFeatured} />
-					<Label for="pf-featured" class="font-normal">
-						<Star size={14} />
-						У добірку на головній
-					</Label>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root class="rounded-2xl">
-		<Card.Header>
-			<Card.Title>Характеристики</Card.Title>
-			<Card.Description
-				>Таблиця під описом товару на сайті. Порожні рядки не зберігаються.</Card.Description
-			>
-		</Card.Header>
-		<Card.Content class="space-y-2">
-			<div
-				class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] gap-3 px-1 text-xs text-muted-foreground"
-			>
-				<span>Назва</span>
-				<span>Значення</span>
-				<span></span>
-			</div>
-
-			{#each attributes as attribute, index (index)}
-				<div class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] items-center gap-3">
-					<Input
-						bind:value={attribute.name}
-						placeholder="Склад"
-						class="h-10 font-medium"
-						list="pf-attr-names"
-					/>
-					<!-- Список значень залежить від назви в сусідньому полі: для
-					     «Посадки» це три варіанти, для «Складу» — шпаргалка. -->
-					<Input
-						bind:value={attribute.value}
-						placeholder="95% віскоза, 5% еластан"
-						class="h-10"
-						list={attributeListId(attribute.name)}
-					/>
 					<Button
 						type="button"
-						variant="ghost"
-						size="icon"
-						class="size-8 text-muted-foreground hover:text-destructive"
-						aria-label="Видалити характеристику"
-						onclick={() => attributes.splice(index, 1)}
+						variant="outline"
+						size="sm"
+						class="mt-2"
+						onclick={() => attributes.push({ name: '', value: '' })}
 					>
-						<X size={15} />
+						<Plus size={14} />
+						Характеристика
 					</Button>
-				</div>
-			{/each}
 
-			{#if fieldErrors.attributes}
-				<p class="text-xs text-destructive">{fieldErrors.attributes}</p>
-			{/if}
-
-			<Button
-				type="button"
-				variant="outline"
-				size="sm"
-				class="mt-2"
-				onclick={() => attributes.push({ name: '', value: '' })}
-			>
-				<Plus size={14} />
-				Характеристика
-			</Button>
-
-			<datalist id="pf-attr-names">
-				{#each attributeOptions as option (option.name)}
-					<option value={option.name}></option>
-				{/each}
-			</datalist>
-			{#each attributeOptions as option, index (option.name)}
-				{#if option.values.length > 0}
-					<datalist id="pf-attr-{index}">
-						{#each option.values as value (value)}
-							<option {value}></option>
+					<datalist id="pf-attr-names">
+						{#each attributeOptions as option (option.name)}
+							<option value={option.name}></option>
 						{/each}
 					</datalist>
-				{/if}
-			{/each}
-		</Card.Content>
-	</Card.Root>
+					{#each attributeOptions as option, index (option.name)}
+						{#if option.values.length > 0}
+							<datalist id="pf-attr-{index}">
+								{#each option.values as value (value)}
+									<option {value}></option>
+								{/each}
+							</datalist>
+						{/if}
+					{/each}
+				</div>
+			</section>
+		</div>
+	</div>
 
-	<Card.Root class="rounded-2xl">
-		<Card.Header>
-			<Card.Title>Фото</Card.Title>
-		</Card.Header>
-		<Card.Content class="space-y-4">
+	<section class="space-y-4">
+		<div class="space-y-1">
+			<h2 class="text-[15px] font-semibold tracking-tight">Фото</h2>
+		</div>
+		<!-- Ширина як у лівої колонки сітки вище (gap-x-10 = 2.5rem): і кнопка,
+		     і список фото, щоб блок не розтягувався на всю сторінку. -->
+		<div class="space-y-4 lg:max-w-[calc(50%-1.25rem)]">
 			<Button
 				type="button"
-				variant="outline"
+				class="h-11 w-full rounded-xl text-sm"
 				onclick={() => fileInput?.click()}
 				disabled={uploading > 0}
 			>
@@ -587,7 +629,7 @@
 					<Spinner />
 					Завантаження ({uploading})
 				{:else}
-					<Upload size={16} />
+					<ImagePlus size={18} />
 					Додати фото
 				{/if}
 			</Button>
@@ -601,15 +643,18 @@
 			/>
 
 			{#if fieldErrors.images}
-				<p class="text-xs text-destructive">{fieldErrors.images}</p>
+				<p class="flex items-center gap-1.5 text-xs text-destructive">
+					<CircleQuestionMark size={13} class="shrink-0" />
+					{fieldErrors.images}
+				</p>
 			{/if}
 
 			{#if images.length > 0}
 				<!-- Опис фото (alt) сервер бере з назви товару, тому руками його
-				     ніхто не набирає. -->
+		     ніхто не набирає. -->
 				<div class="space-y-2">
 					{#each images as image, index (image.url)}
-						<div class="flex items-center gap-3 rounded-xl border p-2">
+						<div class="flex items-center gap-3 rounded-xl border border-border p-2">
 							<img
 								src={cloudinaryThumb(image.url, 96)}
 								alt={name || 'Фото товару'}
@@ -622,18 +667,18 @@
 							{/if}
 
 							<!-- Колір фото: спільні сайт показує завжди, решту — тільки
-							     коли вибрано саме цей колір. -->
+					     коли вибрано саме цей колір. -->
 							<Select.Root type="single" bind:value={image.color}>
 								<Select.Trigger class="ml-auto h-9 w-40">
 									{image.color || 'Спільне'}
 								</Select.Trigger>
-								<Select.Content>
+								<Select.Content class="max-h-50">
 									<Select.Item value="" label="Спільне">Спільне</Select.Item>
 									{#each photoColors as color (color)}
 										<Select.Item value={color} label={color}>{color}</Select.Item>
 									{/each}
 									<!-- Колір, прибраний із розмірів, лишається в списку: інакше
-									     він зник би із селекта, а в базі й далі стояв. -->
+							     він зник би із селекта, а в базі й далі стояв. -->
 									{#if image.color && !photoColors.includes(image.color)}
 										<Select.Item value={image.color} label={image.color}>
 											{image.color} — немає серед розмірів
@@ -671,7 +716,7 @@
 									size="icon"
 									class="size-8 text-muted-foreground hover:text-destructive"
 									aria-label="Видалити фото"
-									onclick={() => images.splice(index, 1)}
+									onclick={() => removeImage(index)}
 								>
 									<X size={14} />
 								</Button>
@@ -687,18 +732,18 @@
 					або поставте якомусь фото «Спільне».
 				</p>
 			{/if}
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</section>
 
-	<Card.Root class="rounded-2xl">
-		<Card.Header>
-			<Card.Title>Розміри</Card.Title>
-		</Card.Header>
-		<Card.Content class="space-y-4">
+	<section class="space-y-4">
+		<div class="space-y-1">
+			<h2 class="text-[15px] font-semibold tracking-tight">Розміри</h2>
+		</div>
+		<div class="space-y-4">
 			<!-- Підписи колонок — лише над першим блоком: далі їх тримає та сама
 			     сітка, а повторювати шапку в кожній картці зайве. -->
 			{#each sizes as group, groupIndex (groupIndex)}
-				<div class="space-y-5 rounded-xl border bg-muted/20 p-4 sm:p-5">
+				<div class="space-y-5 rounded-xl border border-border p-4 sm:p-5">
 					<div class="space-y-2">
 						{#if groupIndex === 0}
 							<div
@@ -714,32 +759,20 @@
 						{/if}
 
 						<div class="grid grid-cols-[1.1fr_0.9fr_0.9fr_0.9fr_0.9fr_2rem] items-center gap-3">
-							<Input
+							<!-- Поле лишається текстовим: свій розмір («S/M») теж має право
+							     існувати. Меню — лише швидкий вибір уже відомих. -->
+							<SuggestInput
 								bind:value={group.size}
+								options={sizeMenu}
+								label="Вибрати розмір"
 								placeholder="M"
-								class="h-10 bg-background font-medium"
-								list="pf-sizes"
-								onchange={() => syncUa(group)}
+								inputClass="font-medium"
+								oncommit={() => syncUa(group)}
 							/>
-							<Input bind:value={group.ua} placeholder="46" class="h-10 bg-background" />
-							<Input
-								bind:value={group.chest}
-								inputmode="numeric"
-								placeholder="92"
-								class="h-10 bg-background"
-							/>
-							<Input
-								bind:value={group.sleeve}
-								inputmode="numeric"
-								placeholder="60"
-								class="h-10 bg-background"
-							/>
-							<Input
-								bind:value={group.length}
-								inputmode="numeric"
-								placeholder="92"
-								class="h-10 bg-background"
-							/>
+							<Input bind:value={group.ua} placeholder="46" class="h-10" />
+							<Input bind:value={group.chest} inputmode="numeric" placeholder="92" class="h-10" />
+							<Input bind:value={group.sleeve} inputmode="numeric" placeholder="60" class="h-10" />
+							<Input bind:value={group.length} inputmode="numeric" placeholder="92" class="h-10" />
 							<Button
 								type="button"
 								variant="ghost"
@@ -754,7 +787,7 @@
 						</div>
 					</div>
 
-					<div class="space-y-2 border-t pt-5">
+					<div class="space-y-2 border-t border-foreground/10 pt-5">
 						{#if groupIndex === 0}
 							<div
 								class="grid grid-cols-[minmax(0,1fr)_7rem_2rem] gap-3 px-1 text-xs text-muted-foreground"
@@ -767,30 +800,27 @@
 
 						{#each group.colors as color, colorIndex (color.id ?? colorIndex)}
 							<div class="grid grid-cols-[minmax(0,1fr)_7rem_2rem] items-center gap-3">
-								<div class="relative">
-									<!-- Крапля кольору всередині поля: окремої колонки HEX
-									     немає, для відомих назв він підставляється з бази. -->
-									<input
-										type="color"
-										value={/^#[0-9a-f]{6}$/i.test(color.colorHex) ? color.colorHex : '#000000'}
-										oninput={(event) => (color.colorHex = event.currentTarget.value)}
-										aria-label="Колір"
-										class="absolute top-1/2 left-1.5 size-7 -translate-y-1/2 cursor-pointer"
-									/>
-									<Input
-										bind:value={color.color}
-										placeholder="Чорний"
-										class="h-10 bg-background pl-11"
-										list="pf-colors"
-										onchange={() => syncColorHex(color)}
-									/>
-								</div>
-								<Input
-									bind:value={color.stock}
-									inputmode="numeric"
-									placeholder="0"
-									class="h-10 bg-background"
-								/>
+								<SuggestInput
+									bind:value={color.color}
+									options={colorMenu}
+									label="Вибрати колір"
+									placeholder="Чорний"
+									inputClass="pl-11"
+									oncommit={() => syncColorHex(color)}
+								>
+									{#snippet leading()}
+										<!-- Крапля кольору всередині поля: окремої колонки HEX
+										     немає, для відомих назв він підставляється з бази. -->
+										<input
+											type="color"
+											value={/^#[0-9a-f]{6}$/i.test(color.colorHex) ? color.colorHex : '#000000'}
+											oninput={(event) => (color.colorHex = event.currentTarget.value)}
+											aria-label="Колір"
+											class="absolute top-1/2 left-1.5 z-10 size-7 -translate-y-1/2 cursor-pointer"
+										/>
+									{/snippet}
+								</SuggestInput>
+								<Input bind:value={color.stock} inputmode="numeric" placeholder="0" class="h-10" />
 								<Button
 									type="button"
 									variant="ghost"
@@ -820,10 +850,16 @@
 			{/each}
 
 			{#if fieldErrors.variants}
-				<p class="text-xs text-destructive">{fieldErrors.variants}</p>
+				<p class="flex items-center gap-1.5 text-xs text-destructive">
+					<CircleQuestionMark size={13} class="shrink-0" />
+					{fieldErrors.variants}
+				</p>
 			{/if}
 			{#if fieldErrors.measurements}
-				<p class="text-xs text-destructive">{fieldErrors.measurements}</p>
+				<p class="flex items-center gap-1.5 text-xs text-destructive">
+					<CircleQuestionMark size={13} class="shrink-0" />
+					{fieldErrors.measurements}
+				</p>
 			{/if}
 
 			<div class="flex flex-wrap items-center gap-2">
@@ -854,19 +890,8 @@
 					</Button>
 				{/each}
 			</div>
-
-			<datalist id="pf-sizes">
-				{#each sizeSuggestions as size (size)}
-					<option value={size}></option>
-				{/each}
-			</datalist>
-			<datalist id="pf-colors">
-				{#each colorOptions as option (option.color)}
-					<option value={option.color}></option>
-				{/each}
-			</datalist>
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</section>
 </div>
 
 <style>

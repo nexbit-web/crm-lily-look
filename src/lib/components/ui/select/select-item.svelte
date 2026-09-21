@@ -26,7 +26,9 @@
 	{#snippet children({ selected, highlighted })}
 		<span class="absolute end-2 flex size-3.5 items-center justify-center">
 			{#if selected}
-				<CheckIcon class="cn-select-item-indicator-icon" />
+				<!-- Позначка вибраного всюди синя, зокрема й під курсором: на
+				     підсвіченому рядку загальне правило перефарбувало б її. -->
+				<CheckIcon class="text-primary!" strokeWidth={2.5} />
 			{/if}
 		</span>
 		<span class="flex flex-1 shrink-0 gap-2 whitespace-nowrap">

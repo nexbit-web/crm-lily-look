@@ -12,8 +12,12 @@
 	<div
 		class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
 	>
+		<!-- Одна ширина на всю CRM: 1010 px — далі сторінка не розтягується,
+		     нижче просто стискається. Сторінки свою ширину більше не задають. -->
 		<main class="min-h-0 flex-1 overflow-auto p-6">
-			{@render children()}
+			<div class="mx-auto w-full max-w-[1010px]">
+				{@render children()}
+			</div>
 		</main>
 	</div>
 </div>
