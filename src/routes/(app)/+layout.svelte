@@ -6,7 +6,7 @@
 </script>
 
 <!-- Хедера немає — вихід і перемикач теми живуть у /settings. -->
-<div class="flex h-svh gap-2 p-2">
+<div class="flex h-svh gap-1  p-1 ">
 	<Sidebar user={{ role: data.user.role ?? 'OPERATOR' }} newOrders={data.newOrders} />
 
 	<div
@@ -15,7 +15,7 @@
 		<!-- Одна ширина на всю CRM: 1010 px — далі сторінка не розтягується,
 		     нижче просто стискається. Сторінки свою ширину більше не задають. -->
 		<main class="min-h-0 flex-1 overflow-auto p-6">
-			<div class="mx-auto w-full max-w-[1010px]">
+			<div class="mx-auto w-full max-w-252.5">
 				{@render children()}
 			</div>
 		</main>

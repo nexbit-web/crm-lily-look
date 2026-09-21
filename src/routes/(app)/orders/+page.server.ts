@@ -10,7 +10,8 @@ export const load: PageServerLoad = async ({ url }) => {
 	const query = (url.searchParams.get('q') ?? '').trim();
 	const statusParam = url.searchParams.get('status') ?? '';
 	const status: OrderStatusKey | null = isOrderStatus(statusParam) ? statusParam : null;
-	const requestedPage = Number(url.searchParams.get('page') ?? '1');
+	const rawPage = Number(url.searchParams.get('page') ?? '1');
+	const requestedPage = Math.max(1, Number.isFinite(rawPage) ? Math.trunc(rawPage) : 1);
 
 	// Номер, імʼя й телефон — те, чим менеджер шукає замовлення, коли клієнт
 	// телефонує. Телефон без insensitive: у ньому немає літер.
@@ -26,11 +27,56 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	const where: Prisma.OrderWhereInput = status ? { ...search, status } : search;
 
+	// Беремо лише те, що показує сторінка: позиції замовлення разом із карткою
+	// (окремого запиту при розгортанні немає), але без службових полів на
+	// кшталт variantId чи paymentRef — вони нікуди не виводяться.
+	const fetchPage = (page: number) =>
+		prisma.order.findMany({
+			where,
+			orderBy: { createdAt: 'desc' },
+			skip: (page - 1) * PER_PAGE,
+			take: PER_PAGE,
+			select: {
+				id: true,
+				number: true,
+				status: true,
+				paymentStatus: true,
+				customerName: true,
+				customerPhone: true,
+				customerEmail: true,
+				deliveryMethod: true,
+				deliveryCity: true,
+				deliveryAddress: true,
+				comment: true,
+				subtotal: true,
+				deliveryCost: true,
+				total: true,
+				createdAt: true,
+				items: {
+					orderBy: { id: 'asc' },
+					select: {
+						id: true,
+						productName: true,
+						size: true,
+						color: true,
+						imageUrl: true,
+						unitPrice: true,
+						quantity: true
+					}
+				}
+			}
+		});
+
 	// Лічильники враховують пошук, але не фільтр за статусом — інакше в усіх
 	// чипсах, крім вибраного, завжди був би нуль.
-	const [grouped, total] = await Promise.all([
+	//
+	// Сторінку замовлень просимо одразу, ще не знаючи total: у переважній
+	// більшості випадків вона в межах діапазону, і тоді все обходиться однією
+	// подорожжю до бази замість двох.
+	const [grouped, total, firstTry] = await Promise.all([
 		prisma.order.groupBy({ by: ['status'], where: search, _count: { _all: true } }),
-		prisma.order.count({ where })
+		prisma.order.count({ where }),
+		fetchPage(requestedPage)
 	]);
 
 	const counts: Record<string, number> = { ALL: 0 };
@@ -41,16 +87,10 @@ export const load: PageServerLoad = async ({ url }) => {
 	}
 
 	const pageCount = Math.max(1, Math.ceil(total / PER_PAGE));
-	// Сторінка за межами діапазону (напр. після зміни фільтра) не має давати пустоту.
-	const page = Math.min(Math.max(1, Number.isFinite(requestedPage) ? requestedPage : 1), pageCount);
-
-	const orders = await prisma.order.findMany({
-		where,
-		orderBy: { createdAt: 'desc' },
-		skip: (page - 1) * PER_PAGE,
-		take: PER_PAGE,
-		include: { items: { orderBy: { id: 'asc' } } }
-	});
+	// Сторінка за межами діапазону (напр. після зміни фільтра) не має давати
+	// пустоту. Трапляється рідко, тож перезапит лише в цьому випадку.
+	const page = Math.min(requestedPage, pageCount);
+	const orders = page === requestedPage ? firstTry : await fetchPage(page);
 
 	return { orders, counts, total, page, pageCount, perPage: PER_PAGE, query, status };
 };

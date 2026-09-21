@@ -48,8 +48,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	// Залишок і кількість варіантів беремо вкладеним select, а не окремим
 	// groupBy: 120 цілих чисел у тій самій відповіді дешевші за другий
 	// похід до Neon — на серверлесі все вирішує кількість запитів, не рядків.
+	//
+	// relationLoadStrategy: 'join' — фото й варіанти приїжджають тим самим
+	// SQL через LATERAL. За замовчуванням Prisma робить окремий запит на
+	// кожен звʼязок, тобто три подорожі замість однієї.
 	const fetchPage = (page: number) =>
 		prisma.product.findMany({
+			relationLoadStrategy: 'join',
 			where,
 			orderBy: SORTS[sort],
 			skip: (page - 1) * PER_PAGE,
@@ -61,7 +66,6 @@ export const load: PageServerLoad = async ({ url }) => {
 				price: true,
 				finalPrice: true,
 				isActive: true,
-				isFeatured: true,
 				categoryId: true,
 				category: { select: { name: true } },
 				images: { orderBy: { position: 'asc' }, take: 1, select: { url: true } },
@@ -119,7 +123,6 @@ export const load: PageServerLoad = async ({ url }) => {
 			// finalPrice рахує тригер у БД; менше за price — значить діє знижка.
 			finalPrice: product.finalPrice,
 			isActive: product.isActive,
-			isFeatured: product.isFeatured,
 			categoryName: product.category?.name ?? '—',
 			imageUrl: product.images[0]?.url ?? null,
 			stock: product.variants.reduce((sum, variant) => sum + variant.stock, 0),

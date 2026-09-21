@@ -2,8 +2,11 @@
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/lib/server/prisma-client"
+  provider        = "prisma-client"
+  output          = "../src/lib/server/prisma-client"
+  // relationJoins дає relationLoadStrategy: "join" — вкладені звʼязки
+  // тягнуться одним SQL через LATERAL, а не окремим запитом на кожен.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

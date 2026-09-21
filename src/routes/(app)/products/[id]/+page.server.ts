@@ -10,25 +10,31 @@ import { kopToUahInput } from '$lib/money';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
-	const product = await prisma.product.findUnique({
-		where: { id: params.id },
-		include: {
-			images: { orderBy: { position: 'asc' } },
-			// position — порядок, у якому варіанти набрали в CRM. size/color
-			// лишаються запасним ключем для рядків, створених до появи колонки.
-			variants: { orderBy: [{ position: 'asc' }, { size: 'asc' }, { color: 'asc' }] },
-			measurements: { orderBy: { position: 'asc' } },
-			attributes: { orderBy: { position: 'asc' } }
-		}
-	});
-
-	if (!product) error(404, 'Товар не знайдено');
-
-	const [categories, variants, attributes] = await Promise.all([
+	// Товар і довідники їдуть одним пакетом, хоч перевірка на 404 і стоїть
+	// нижче: підказки не залежать від товару, а послідовні await коштували б
+	// зайвої подорожі до Neon на кожне відкриття картки. Ціна помилки —
+	// чотири зайві запити на неіснуючому id, що трапляється хіба з друкарні.
+	const [product, categories, variants, attributes] = await Promise.all([
+		prisma.product.findUnique({
+			// relationLoadStrategy: 'join' тут не вмикаємо: на заміряній базі
+			// картка з чотирма звʼязками з ним виходила навіть трохи повільнішою
+			// (85 → 102 мс), бо LATERAL збирає чотири JSON-масиви в один рядок.
+			where: { id: params.id },
+			include: {
+				images: { orderBy: { position: 'asc' } },
+				// position — порядок, у якому варіанти набрали в CRM. size/color
+				// лишаються запасним ключем для рядків, створених до появи колонки.
+				variants: { orderBy: [{ position: 'asc' }, { size: 'asc' }, { color: 'asc' }] },
+				measurements: { orderBy: { position: 'asc' } },
+				attributes: { orderBy: { position: 'asc' } }
+			}
+		}),
 		categoryOptions(),
 		variantOptions(),
 		attributeOptions()
 	]);
+
+	if (!product) error(404, 'Товар не знайдено');
 
 	return {
 		categories,

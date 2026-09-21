@@ -58,27 +58,27 @@
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
+				<!-- Вибраний пункт — мʼяка заливка плюс синя іконка, як вибраний
+				     рядок у бічних панелях macOS. Ніякої підсвітки: у списку з
+				     шести іконок достатньо кольору, щоб побачити, де ти є. -->
 				<a
 					{...props}
 					href={item.href}
 					aria-current={active ? 'page' : undefined}
 					aria-label={badge > 0 ? `${item.label} — ${badge} нових` : item.label}
-					class="nav-item group relative flex w-full flex-col items-center gap-1 rounded-xl py-2 outline-none focus-visible:ring-2 focus-visible:ring-white/40 {active
-						? 'is-active'
-						: ''}"
+					class="relative flex h-10 w-full items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40 {active
+						? 'bg-white/10 text-primary'
+						: 'text-white/55 hover:bg-white/6 hover:text-white/90'}"
 				>
-					<span class="glow" aria-hidden="true"></span>
-					<span class="relative z-10 flex size-6 items-center justify-center">
-						<item.icon size={20} strokeWidth={active ? 2 : 1.8} aria-hidden="true" />
-						{#if badge > 0}
-							<span
-								class="absolute -top-1.5 -right-2 z-20 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-bold text-white ring-2 ring-[#0f0f12] dark:ring-card"
-								aria-hidden="true"
-							>
-								{badge > 9 ? '9+' : badge}
-							</span>
-						{/if}
-					</span>
+					<item.icon size={20} strokeWidth={active ? 2.1 : 1.8} aria-hidden="true" />
+					{#if badge > 0}
+						<span
+							class="absolute top-1.5 right-1.5 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white ring-2 ring-[#0f0f12] dark:ring-card"
+							aria-hidden="true"
+						>
+							{badge > 9 ? '9+' : badge}
+						</span>
+					{/if}
 				</a>
 			{/snippet}
 		</Tooltip.Trigger>
@@ -93,7 +93,7 @@
 <Tooltip.Provider delayDuration={200}>
 	<nav
 		aria-label="Навігація CRM"
-		class="sidebar flex h-full w-14 shrink-0 flex-col items-center rounded-2xl border border-border bg-[#0f0f12] py-3 text-white dark:bg-card"
+		class="flex h-full w-14 shrink-0 flex-col items-center rounded-2xl border border-border bg-[#0f0f12] py-3 dark:bg-card"
 	>
 		<div class="flex w-full flex-col items-center gap-1 px-1.5">
 			{#each visibleNav as item (item.href)}
@@ -106,41 +106,3 @@
 		</div>
 	</nav>
 </Tooltip.Provider>
-
-<style>
-	/* Сайдбар завжди темний — фіксований колір, незалежно від теми */
-	.sidebar {
-		--glow-from: #b5179e;
-		--glow-via: #7209b7;
-		--glow-to: #4cc9f0;
-		--glow-size: 2.25rem;
-		--glow-blur: 12px;
-		--glow-opacity: 0.75;
-	}
-	.nav-item:not(.is-active) {
-		opacity: 0.6;
-	}
-	.nav-item:hover,
-	.nav-item.is-active {
-		opacity: 1;
-	}
-	.glow {
-		position: absolute;
-		top: 0.25rem;
-		left: 50%;
-		transform: translateX(-50%);
-		width: var(--glow-size);
-		height: var(--glow-size);
-		border-radius: 9999px;
-		background: linear-gradient(to top right, var(--glow-from), var(--glow-via), var(--glow-to));
-		filter: blur(var(--glow-blur));
-		pointer-events: none;
-		z-index: 0;
-		opacity: 0;
-		transition: opacity 0.2s;
-	}
-	.nav-item:hover .glow,
-	.nav-item.is-active .glow {
-		opacity: var(--glow-opacity);
-	}
-</style>
