@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import toast from 'svelte-hot-french-toast';
 	import { ChevronLeft, Trash2 } from '@lucide/svelte';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import ConfirmAlert, { alertActionClass } from '$lib/components/confirm-alert.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import ProductForm from '$lib/components/product-form.svelte';
@@ -187,37 +187,32 @@
 	<p class="text-center text-xs text-muted-foreground">Оновлено {updatedAt}</p>
 </div>
 
-<Dialog.Root bind:open={confirmOpen}>
-	<Dialog.Content class="sm:max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>Видалити «{product.name}»?</Dialog.Title>
-			<Dialog.Description>
-				Товар зникне з сайту разом з фото і розмірами. Оформлені замовлення не постраждають.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (confirmOpen = false)}>Скасувати</Button>
-			<form
-				method="POST"
-				action="?/delete"
-				use:enhance={() => {
-					deleting = true;
-					return async ({ result }) => {
-						deleting = false;
-						confirmOpen = false;
-						if (result.type === 'redirect') toast.success('Товар видалено');
-						else if (result.type === 'error') {
-							toast.error(result.error?.message ?? 'Не вдалося видалити');
-						}
-						await applyAction(result);
-					};
-				}}
-			>
-				<Button type="submit" variant="destructive" disabled={deleting}>
-					{#if deleting}<Spinner />{/if}
-					Видалити
-				</Button>
-			</form>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<ConfirmAlert
+	bind:open={confirmOpen}
+	title="Видалити «{product.name}»?"
+	description="Товар зникне з сайту разом з фото і розмірами. Оформлені замовлення не постраждають."
+>
+	{#snippet action()}
+		<form
+			method="POST"
+			action="?/delete"
+			use:enhance={() => {
+				deleting = true;
+				return async ({ result }) => {
+					deleting = false;
+					confirmOpen = false;
+					if (result.type === 'redirect') toast.success('Товар видалено');
+					else if (result.type === 'error') {
+						toast.error(result.error?.message ?? 'Не вдалося видалити');
+					}
+					await applyAction(result);
+				};
+			}}
+		>
+			<button type="submit" class={alertActionClass('danger')} disabled={deleting}>
+				{#if deleting}<Spinner />{/if}
+				Видалити
+			</button>
+		</form>
+	{/snippet}
+</ConfirmAlert>
