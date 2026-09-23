@@ -99,7 +99,7 @@
 				disabled={isSelf}
 				class="flex-1 rounded-[9px] px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 {draft.role ===
 				role
-					? 'bg-background text-foreground shadow-sm'
+					? 'bg-surface text-foreground shadow-sm'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => (draft.role = role)}
 			>
@@ -251,7 +251,7 @@
 							bind:value={draft.name}
 							placeholder="Оля"
 							autocomplete="off"
-							class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 							required
 						/>
 					</div>
@@ -267,7 +267,7 @@
 							bind:value={draft.email}
 							placeholder="olya@lilylook.ua"
 							autocomplete="off"
-							class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 							required
 						/>
 					</div>
@@ -281,7 +281,7 @@
 							name="password"
 							bind:value={draft.password}
 							autocomplete="off"
-							class="h-9 w-56 rounded-[10px] border-0 bg-background font-mono text-xs shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface font-mono text-xs shadow-none"
 							required
 						/>
 					</div>

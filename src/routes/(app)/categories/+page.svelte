@@ -348,7 +348,7 @@
 							type="button"
 							variant="ghost"
 							size="sm"
-							class="h-8 rounded-full bg-background px-3 hover:bg-background/70"
+							class="h-8 rounded-full bg-surface px-3 hover:bg-surface/70"
 							disabled={uploading}
 							onclick={() => coverInput?.click()}
 						>
@@ -370,7 +370,7 @@
 						name="name"
 						bind:value={draft.name}
 						placeholder="Сукні"
-						class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+						class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 						required
 					/>
 				</div>
@@ -382,7 +382,7 @@
 					<Select.Root type="single" name="parentId" bind:value={draft.parentId}>
 						<Select.Trigger
 							id="cat-parent"
-							class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 						>
 							{parentLabel}
 						</Select.Trigger>

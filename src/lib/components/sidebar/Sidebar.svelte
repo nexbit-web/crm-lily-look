@@ -9,7 +9,8 @@
 		FolderTree,
 		BadgePercent,
 		ShieldUser,
-		Settings
+		Settings,
+		Bot
 	} from '@lucide/svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { atLeast, type Role } from '$lib/permissions';
@@ -36,7 +37,8 @@
 		{ href: '/products', label: 'Товари', icon: Shirt },
 		{ href: '/categories', label: 'Категорії', icon: FolderTree },
 		{ href: '/discounts', label: 'Знижки', icon: BadgePercent, min: 'MANAGER' },
-		{ href: '/admins', label: 'Адмін', icon: ShieldUser, min: 'ADMIN' }
+		{ href: '/admins', label: 'Адмін', icon: ShieldUser, min: 'ADMIN' },
+		{ href: '/telegram', label: 'Telegram-бот', icon: Bot, min: 'ADMIN' }
 	];
 	// Видимі пункти за роллю користувача
 	const visibleNav = $derived(nav.filter((i) => atLeast(user.role, i.min ?? 'OPERATOR')));

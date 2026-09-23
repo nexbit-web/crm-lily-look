@@ -302,7 +302,7 @@
 							name="name"
 							bind:value={draft.name}
 							placeholder="Весняний розпродаж"
-							class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 							required
 						/>
 					</div>
@@ -316,7 +316,7 @@
 							value={draft.kind}
 							onValueChange={(value) => (draft.kind = value as 'percent' | 'amount')}
 						>
-							<Select.Trigger class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none">
+							<Select.Trigger class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none">
 								{draft.kind === 'percent' ? 'Відсоток' : 'Фіксована сума'}
 							</Select.Trigger>
 							<Select.Content class="rounded-[14px]">
@@ -338,7 +338,7 @@
 							bind:value={draft.value}
 							inputmode="decimal"
 							placeholder={draft.kind === 'percent' ? '20' : '150.00'}
-							class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none"
+							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 							required
 						/>
 					</div>
@@ -352,7 +352,7 @@
 							value={draft.scope}
 							onValueChange={(value) => changeScope(value as Scope)}
 						>
-							<Select.Trigger class="h-9 w-56 rounded-[10px] border-0 bg-background shadow-none">
+							<Select.Trigger class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none">
 								{SCOPE_LABELS[draft.scope]}
 							</Select.Trigger>
 							<Select.Content class="rounded-[14px]">

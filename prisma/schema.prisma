@@ -325,7 +325,11 @@ model Order {
   /// Ідентифікатор транзакції у провайдера.
   paymentRef      String?
 
-  items OrderItem[]
+  items   OrderItem[]
+  /// Історія змін статусу: пише і бот, і CRM.
+  events  OrderEvent[]
+  /// Повідомлення про це замовлення, надіслані в Telegram. Службове для бота.
+  notices BotNotice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -355,6 +359,115 @@ model OrderItem {
   quantity  Int
 
   @@index([orderId])
+}
+
+// ─── Telegram-бот ───────────────────────────────────────────────────────────
+//
+// Таблиці вже існують у боєвій базі — їх створив бот, який живе на хостингу
+// сайту. Тут вони описані рівно так, як лежать у Postgres: CRM їх читає й
+// міняє кілька колонок, але не створює й не видаляє.
+//
+// Хто що пише:
+//   BotInvite  — CRM створює коди, бот гасить їх при вході (usedAt, usedById);
+//   BotUser    — рядок створює тільки бот, CRM міняє isActive і role;
+//   OrderEvent — пишуть обидва; від CRM іде actorId = NULL;
+//   BotNotice, BotUpdate — внутрішня кухня бота, CRM їх не чіпає.
+
+/// Права в боті. У CRM свої ролі (`User.role`) — це різні набори.
+enum BotRole {
+  MANAGER
+  COURIER
+  ADMIN
+}
+
+/// Одноразовий код доступу: людина надсилає боту `/start КОД`.
+model BotInvite {
+  id   String  @id @default(cuid())
+  /// Те, що людина надсилає боту. Бот звіряє посимвольно, без нормалізації.
+  code String  @unique
+  role BotRole @default(MANAGER)
+  /// Кому виданий — нотатка для власника, бот її не бачить.
+  note String?
+
+  /// NULL — безстроковий.
+  expiresAt DateTime?
+  /// Проставляє бот у момент входу. CRM пише сюди лише коли відкликає код.
+  usedAt    DateTime?
+  /// Проставляє бот. Унікальний: один код — один вхід.
+  usedById  String?   @unique
+  usedBy    BotUser?  @relation(fields: [usedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([usedAt])
+}
+
+/// Людина з доступом до бота. Рядок зʼявляється тільки при вході за кодом:
+/// лише тоді відомі telegramId і chatId, а підробити їх не можна.
+model BotUser {
+  id         String    @id @default(cuid())
+  /// bigint: id Telegram уже впритул підходять до межі Number у JS.
+  telegramId BigInt    @unique
+  /// Особистий чат — туди бот надсилає замовлення.
+  chatId     BigInt
+  name       String
+  username   String?
+  role       BotRole   @default(MANAGER)
+  /// Вимикач з боку CRM. Бот перевіряє його на кожну дію, нічого не кешуючи.
+  isActive   Boolean   @default(true)
+  /// Людина вийшла сама, командою в боті. Щоб повернути — мало isActive.
+  leftAt     DateTime?
+
+  invite  BotInvite?
+  events  OrderEvent[]
+  notices BotNotice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/// Історія статусів замовлення. Order.status — поточний зріз, це — журнал.
+model OrderEvent {
+  id      String      @id @default(cuid())
+  orderId String
+  order   Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status  OrderStatus
+  /// NULL — змінено не з бота (CRM або сам сайт). Бот показує це як «CRM».
+  actorId String?
+  actor   BotUser?    @relation(fields: [actorId], references: [id])
+  /// Необовʼязково: причина, номер накладної тощо.
+  note    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+/// Надіслане в Telegram повідомлення про замовлення. Службова для бота:
+/// читати можна, писати — ні, інакше ламається перемальовування карток.
+model BotNotice {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  botUserId String?
+  botUser   BotUser? @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  chatId    BigInt
+  messageId BigInt
+
+  createdAt DateTime @default(now())
+
+  @@unique([orderId, chatId])
+  @@index([orderId])
+}
+
+/// Захист від повторної обробки апдейта Telegram. Службова для бота.
+model BotUpdate {
+  updateId  BigInt   @id
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 // ─── Авторизація (better-auth) ──────────────────────────────────────────────
