@@ -4,8 +4,9 @@ import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { variantOptions } from '$lib/server/variant-options';
 import { attributeOptions } from '$lib/server/attribute-options';
-import { autoSku, parseProductForm } from '$lib/server/product-input';
+import { parseProductForm } from '$lib/server/product-input';
 import { uniqueProductSlug } from '$lib/server/product-slug';
+import { assignSkus } from '$lib/server/product-sku';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -33,6 +34,8 @@ export const actions: Actions = {
 		const input = parsed.value;
 
 		const slug = await uniqueProductSlug(input.slugBase);
+		// Артикули збираються з адреси, розміру й кольору — див. assignSkus().
+		const variants = await assignSkus(slug, input.variants);
 
 		try {
 			// Вкладений create — одна атомарна операція, без інтерактивної
@@ -54,8 +57,8 @@ export const actions: Actions = {
 						}))
 					},
 					variants: {
-						create: input.variants.map((variant) => ({
-							sku: autoSku(slug, variant),
+						create: variants.map((variant) => ({
+							sku: variant.sku,
 							size: variant.size,
 							color: variant.color,
 							colorHex: variant.colorHex,

@@ -4,9 +4,11 @@ import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { variantOptions } from '$lib/server/variant-options';
 import { attributeOptions } from '$lib/server/attribute-options';
-import { autoSku, parseProductForm } from '$lib/server/product-input';
+import { parseProductForm } from '$lib/server/product-input';
 import { uniqueProductSlug } from '$lib/server/product-slug';
+import { assignSkus } from '$lib/server/product-sku';
 import { kopToUahInput } from '$lib/money';
+import { isAutoSku } from '$lib/sku';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -60,7 +62,9 @@ export const load: PageServerLoad = async ({ params }) => {
 			})),
 			variants: product.variants.map((variant) => ({
 				id: variant.id,
-				sku: variant.sku,
+				// Машинний артикул у формі не показуємо: порожнє поле означає
+				// «збери за правилом», і тоді він піде за назвою та розміром.
+				sku: isAutoSku(variant.sku, product.slug, variant.size, variant.color) ? '' : variant.sku,
 				size: variant.size,
 				color: variant.color,
 				colorHex: variant.colorHex ?? '',
@@ -95,6 +99,9 @@ export const actions: Actions = {
 		if (!existing) error(404, 'Товар не знайдено');
 
 		const slug = await uniqueProductSlug(input.slugBase, params.id);
+		// Перейменування товару або зміна розміру чи кольору перебудовує артикул:
+		// у формі він порожній доти, доки його не вписали руками.
+		const withSkus = await assignSkus(slug, input.variants, params.id);
 
 		// Варіанти, що лишились у формі; решту видаляємо.
 		const knownIds = new Set(existing.variants.map((variant) => variant.id));
@@ -125,12 +132,14 @@ export const actions: Actions = {
 					},
 					variants: {
 						deleteMany: { id: { notIn: keptIds } },
-						update: input.variants
+						// Саме update, а не видалення з повторним створенням: на
+						// ProductVariant.id посилаються кошики покупців.
+						update: withSkus
 							.filter((variant) => variant.id && knownIds.has(variant.id))
 							.map((variant) => ({
 								where: { id: variant.id! },
 								data: {
-									sku: autoSku(slug, variant),
+									sku: variant.sku,
 									size: variant.size,
 									color: variant.color,
 									colorHex: variant.colorHex,
@@ -141,10 +150,10 @@ export const actions: Actions = {
 									position: variant.position
 								}
 							})),
-						create: input.variants
+						create: withSkus
 							.filter((variant) => !variant.id || !knownIds.has(variant.id))
 							.map((variant) => ({
-								sku: autoSku(slug, variant),
+								sku: variant.sku,
 								size: variant.size,
 								color: variant.color,
 								colorHex: variant.colorHex,

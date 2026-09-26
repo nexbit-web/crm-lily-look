@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import toast from 'svelte-hot-french-toast';
-	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleAlert } from '@lucide/svelte';
+	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleAlert, RefreshCw } from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import SuggestInput from '$lib/components/suggest-input.svelte';
 	import PhotoViewer from '$lib/components/photo-viewer.svelte';
@@ -20,6 +20,7 @@
 		type CloudinarySignature
 	} from '$lib/cloudinary-upload';
 	import { slugify } from '$lib/slug';
+	import { skuFor } from '$lib/sku';
 	import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
 	import { bySize } from '$lib/sizes';
 
@@ -348,6 +349,13 @@
 	}
 
 	/** Додає одразу весь ряд, пропускаючи розміри, що вже є. */
+	/** Скидає ручні артикули — далі сервер збере їх за правилом. */
+	function resetSkus() {
+		for (const group of sizes) {
+			for (const color of group.colors) color.sku = '';
+		}
+	}
+
 	function addSizeRange(list: string[]) {
 		const known = new Set(sizes.map((group) => group.size.trim().toUpperCase()));
 		// Набір кольорів беремо з першої заповненої групи — так швидше набивати.
@@ -800,16 +808,17 @@
 					<div class="space-y-2 border-t border-foreground/10 pt-5">
 						{#if groupIndex === 0}
 							<div
-								class="grid grid-cols-[minmax(0,1fr)_7rem_2rem] gap-3 px-1 text-xs text-muted-foreground"
+								class="grid grid-cols-[minmax(0,1fr)_11rem_6rem_2rem] gap-3 px-1 text-xs text-muted-foreground"
 							>
 								<span>Колір</span>
+								<span>Артикул</span>
 								<span>Кількість</span>
 								<span></span>
 							</div>
 						{/if}
 
 						{#each group.colors as color, colorIndex (color.id ?? colorIndex)}
-							<div class="grid grid-cols-[minmax(0,1fr)_7rem_2rem] items-center gap-3">
+							<div class="grid grid-cols-[minmax(0,1fr)_11rem_6rem_2rem] items-center gap-3">
 								<SuggestInput
 									bind:value={color.color}
 									options={colorMenu}
@@ -830,6 +839,14 @@
 										/>
 									{/snippet}
 								</SuggestInput>
+								<!-- Порожнє поле = артикул збереться за правилом і піде за
+								     назвою, розміром і кольором. Вписаний руками лишається як є. -->
+								<Input
+									bind:value={color.sku}
+									placeholder={skuFor(slugPreview, group.size, color.color) || 'авто'}
+									spellcheck={false}
+									class="h-10 font-mono text-xs"
+								/>
 								<Input bind:value={color.stock} inputmode="numeric" placeholder="0" class="h-10" />
 								<Button
 									type="button"
@@ -899,6 +916,18 @@
 						{size}
 					</Button>
 				{/each}
+
+				<!-- Очищає ручні артикули: далі їх збере сервер за правилом. -->
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					class="ml-auto h-8 px-2 text-muted-foreground"
+					onclick={resetSkus}
+				>
+					<RefreshCw size={14} />
+					Перегенерувати артикули
+				</Button>
 			</div>
 		</div>
 	</section>

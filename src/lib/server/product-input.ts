@@ -290,8 +290,3 @@ export function parseProductForm(form: FormData): ParseResult {
 		}
 	};
 }
-
-/** SKU за замовчуванням: адреса товару + розмір + колір. */
-export function autoSku(slug: string, variant: ParsedVariant): string {
-	return variant.sku || `${slug}-${slugify(variant.size)}-${slugify(variant.color)}`;
-}

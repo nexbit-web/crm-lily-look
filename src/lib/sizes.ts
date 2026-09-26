@@ -39,10 +39,22 @@ const ALIASES: Record<string, string> = {
 	'2XS': 'XXS'
 };
 
-function normalize(size: string): string {
+/**
+ * Розмір латиницею: «4ХL» з кириличною Х стає «4XL», «М-XL» — «M-XL».
+ *
+ * Потрібне не лише для сортування, а й для артикула: у ньому мусять бути
+ * тільки латинські літери, інакше два однакових на вигляд розміри дають два
+ * різних артикули.
+ */
+export function latinSize(size: string): string {
 	const upper = size.trim().toUpperCase();
 	let latin = '';
 	for (const char of upper) latin += LOOKALIKES[char] ?? char;
+	return latin;
+}
+
+function normalize(size: string): string {
+	const latin = latinSize(size);
 	return ALIASES[latin] ?? latin;
 }
 

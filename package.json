@@ -18,6 +18,7 @@
 		"auth:generate": "npx @better-auth/cli@latest generate --config scripts/auth-gen.ts --output prisma/better-auth.prisma --yes",
 		"user:create": "tsx scripts/create-user.ts",
 		"variants:order": "tsx scripts/order-variants.ts",
+		"sku:fix": "tsx scripts/fix-skus.ts",
 		"ui:add": "node scripts/shadcn.mjs add"
 	},
 	"devDependencies": {

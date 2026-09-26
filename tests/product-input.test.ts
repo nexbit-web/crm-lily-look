@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoSku, parseProductForm } from '$lib/server/product-input';
+import { parseProductForm } from '$lib/server/product-input';
 
 const PHOTO = 'https://res.cloudinary.com/demo/image/upload/v1/lily-look/products/a.jpg';
 
@@ -205,17 +205,5 @@ describe('розбір форми товару', () => {
 			);
 			expect(parsed.ok).toBe(false);
 		});
-	});
-});
-
-describe('autoSku', () => {
-	const variant = { sku: '', size: 'M', color: 'Чорний', colorHex: null, stock: 1, position: 0 };
-
-	it('будує артикул з адреси, розміру й кольору', () => {
-		expect(autoSku('suknia', variant)).toBe('suknia-m-chornyi');
-	});
-
-	it('не чіпає артикул, вписаний руками', () => {
-		expect(autoSku('suknia', { ...variant, sku: 'LL-001' })).toBe('LL-001');
 	});
 });
