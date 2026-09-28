@@ -2,66 +2,8 @@ import { error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { atLeast } from '$lib/permissions';
 import { isPeriod, PERIOD_DAYS, type PeriodKey } from '$lib/statistics';
+import { dayKey, midnight, shiftKey } from '$lib/server/kyiv';
 import type { PageServerLoad } from './$types';
-
-/**
- * Магазин український: доба в статистиці має закінчуватись опівночі в Києві,
- * а не о 02:00 за UTC. Ту саму зону вписано літералом у SQL нижче — там її не
- * можна передати параметром, бо `AT TIME ZONE` чекає константу.
- */
-const TZ = 'Europe/Kyiv';
-
-/** Зсув зони від UTC у мілісекундах на конкретний момент (враховує літній час). */
-function tzOffset(at: Date): number {
-	const parts = new Intl.DateTimeFormat('en-US', {
-		timeZone: TZ,
-		hour12: false,
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit',
-		hour: '2-digit',
-		minute: '2-digit',
-		second: '2-digit'
-	}).formatToParts(at);
-
-	const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0');
-	// hourCycle h23 інколи віддає «24» для півночі — нормалізуємо.
-	const hour = get('hour') % 24;
-	const asUtc = Date.UTC(
-		get('year'),
-		get('month') - 1,
-		get('day'),
-		hour,
-		get('minute'),
-		get('second')
-	);
-	return asUtc - at.getTime();
-}
-
-/** Момент → «2026-09-06» за київським календарем. */
-function dayKey(at: Date): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: TZ,
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit'
-	}).format(at);
-}
-
-/**
- * Зсув ключа на N діб. Рахуємо чистою календарною арифметикою в UTC, щоб
- * перехід на літній час не з'їдав і не дублював день.
- */
-function shiftKey(key: string, days: number): string {
-	const [year, month, day] = key.split('-').map(Number);
-	return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-}
-
-/** «2026-09-06» → абсолютний момент київської півночі цієї доби. */
-function midnight(key: string): Date {
-	const utc = new Date(`${key}T00:00:00Z`);
-	return new Date(utc.getTime() - tzOffset(utc));
-}
 
 /** Відсоток зміни до попереднього такого ж періоду. null — порівнювати нема з чим. */
 function delta(current: number, previous: number): number | null {

@@ -470,6 +470,35 @@ model BotUpdate {
   @@index([createdAt])
 }
 
+// ─── Відвідуваність сайту ───────────────────────────────────────────────────
+//
+// Таблицю створив і наповнює сайт (міграція 20260928000000_page_events).
+// CRM її тільки читає. Модель описана тут один в один лише для того, щоб
+// `prisma db push` чи майбутня міграція CRM не вирішили, що таблиця зайва,
+// і не видалили її. Нових міграцій для неї не створюємо.
+
+/// Одна подія на сайті: перегляд сторінки, додавання в кошик або замовлення.
+model PageEvent {
+  id        BigInt   @id @default(autoincrement())
+  /// Випадкова мітка браузера. Та сама мітка в різні дні — та сама людина.
+  visitorId String
+  /// 'view' | 'add_to_cart' | 'order'
+  type      String
+  /// 'home' | 'catalog' | 'collection' | 'product' | 'cart' | 'checkout' | 'order' | 'info' | 'other'
+  page      String
+  /// Адреса без параметрів, напр. '/product/palto-rozheve'.
+  path      String
+  /// 'facebook' | 'instagram' | 'google' | 'direct' | 'other' — останнє джерело за 30 днів.
+  source    String
+  /// 'mobile' | 'desktop'
+  device    String
+  /// UTC.
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([visitorId, createdAt])
+}
+
 // ─── Авторизація (better-auth) ──────────────────────────────────────────────
 //
 // Моделі згенеровані `@better-auth/cli generate` — назви полів і таблиць

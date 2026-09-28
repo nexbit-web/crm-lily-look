@@ -4,6 +4,7 @@
 	import type { Component } from 'svelte';
 	import {
 		LayoutDashboard,
+		Eye,
 		Package,
 		Shirt,
 		FolderTree,
@@ -33,6 +34,7 @@
 			icon: LayoutDashboard,
 			min: 'MANAGER'
 		},
+		{ href: '/traffic', label: 'Відвідуваність', icon: Eye, min: 'MANAGER' },
 		{ href: '/orders', label: 'Замовлення', icon: Package },
 		{ href: '/products', label: 'Товари', icon: Shirt },
 		{ href: '/categories', label: 'Категорії', icon: FolderTree },
