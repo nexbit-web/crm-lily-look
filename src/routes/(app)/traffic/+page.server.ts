@@ -31,6 +31,9 @@ import type { PageServerLoad } from './$types';
 /** Скільки товарів показувати у звіті. */
 const PRODUCTS_SHOWN = 20;
 
+/** Скільки адрес показувати у звіті «Сторінки». */
+const PAGES_SHOWN = 20;
+
 type FunnelRow = {
 	visitors: number;
 	views: number;
@@ -52,6 +55,7 @@ type ProductRow = {
 };
 type ExitRow = { page: string; count: number };
 type DeviceRow = { device: string; visitors: number };
+type PageRow = { page: string; path: string; views: number; visitors: number };
 
 function counts(row: FunnelRow | undefined): FunnelCounts {
 	return {
@@ -185,6 +189,20 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 				ORDER BY visitors DESC
 			`,
 
+			// Усі відкриті адреси: головна, каталоги, товари, кошик — що завгодно.
+			prisma.$queryRaw<PageRow[]>`
+				SELECT page, path,
+				       count(*)::int                    AS views,
+				       count(DISTINCT "visitorId")::int AS visitors
+				FROM "PageEvent"
+				WHERE type = 'view'
+				  AND "createdAt" >= ${start} AND "createdAt" < ${end}
+				  AND (${source}::text IS NULL OR source = ${source})
+				GROUP BY page, path
+				ORDER BY views DESC, visitors DESC
+				LIMIT ${PAGES_SHOWN}
+			`,
+
 			// Для звірки: скільки замовлень за ці ж дні записала сама CRM.
 			prisma.order.count({ where: { createdAt: { gte: start, lt: end } } })
 		]);
@@ -193,7 +211,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		throw err;
 	}
 
-	const [[totalsRow], dayRows, sourceRows, productRows, exitRows, deviceRows, crmOrders] = result;
+	const [[totalsRow], dayRows, sourceRows, productRows, exitRows, deviceRows, pageRows, crmOrders] =
+		result;
 
 	const totals = counts(totalsRow);
 	if (totals.visitors === 0) return { ...base, state: 'empty' as const };
@@ -242,6 +261,12 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			viewed: row.viewed,
 			added: row.added,
 			rate: rate(row.added, row.viewed)
+		})),
+		pages: pageRows.map((row) => ({
+			path: row.path,
+			label: PAGE_LABELS[row.page] ?? row.page,
+			views: row.views,
+			visitors: row.visitors
 		})),
 		exits: exitRows.map((row) => ({
 			page: row.page,
