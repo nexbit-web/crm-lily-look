@@ -9,6 +9,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { formatUah, kopToUahInput } from '$lib/money';
+	import { formatPercent } from '$lib/percent';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -57,9 +58,9 @@
 		return `${count} ${many}`;
 	}
 
-	/** «−20%» або «−150,00 ₴» — те, що знижка забирає з ціни. */
+	/** «−20%», «−33,6%» або «−150,00 ₴» — те, що знижка забирає з ціни. */
 	function valueOf(row: Row): string {
-		if (row.percent !== null) return `−${row.percent}%`;
+		if (row.percent !== null) return `−${formatPercent(row.percent)}%`;
 		if (row.amount !== null) return `−${formatUah(row.amount)}`;
 		return '—';
 	}
@@ -337,7 +338,7 @@
 							name="value"
 							bind:value={draft.value}
 							inputmode="decimal"
-							placeholder={draft.kind === 'percent' ? '20' : '150.00'}
+							placeholder={draft.kind === 'percent' ? '33.5' : '150.00'}
 							class="h-9 w-56 rounded-[10px] border-0 bg-surface shadow-none"
 							required
 						/>

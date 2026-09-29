@@ -212,8 +212,8 @@ model Discount {
   id      String        @id @default(cuid())
   name    String
   scope   DiscountScope
-  /// Відсоток знижки, 1..90.
-  percent Int?
+  /// Відсоток знижки, 1..90, до двох знаків після коми (33.6).
+  percent Decimal? @db.Decimal(5, 2)
   /// Фіксована знижка в копійках.
   amount  Int?
 

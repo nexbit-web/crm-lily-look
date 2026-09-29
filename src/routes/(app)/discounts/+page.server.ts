@@ -2,7 +2,29 @@ import { fail } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { parseUahToKop } from '$lib/money';
+import { isFractional, parsePercent } from '$lib/percent';
 import type { Actions, PageServerLoad } from './$types';
+
+/**
+ * Чи прийме колонка дробовий відсоток. Поки вона `integer`, база мовчки
+ * округлила б 33.6 до 34 — такого запису допустити не можна.
+ *
+ * Кешуємо лише «так»: після міграції сайту відповідь уже не зміниться, і
+ * зайвого запиту на кожне збереження не буде. Для цілих відсотків
+ * перевірка не потрібна взагалі.
+ */
+let fractionReady = false;
+
+async function acceptsFraction(): Promise<boolean> {
+	if (fractionReady) return true;
+	const [row] = await prisma.$queryRaw<{ scale: number | null }[]>`
+		SELECT numeric_scale::int AS scale
+		FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'Discount' AND column_name = 'percent'
+	`;
+	fractionReady = (row?.scale ?? 0) > 0;
+	return fractionReady;
+}
 
 const SCOPES = ['ALL', 'CATEGORY', 'PRODUCT'] as const;
 type Scope = (typeof SCOPES)[number];
@@ -38,7 +60,8 @@ export const load: PageServerLoad = async () => {
 			id: discount.id,
 			name: discount.name,
 			scope: discount.scope,
-			percent: discount.percent,
+			// Decimal у браузер не передати — віддаємо звичайне число (33.6).
+			percent: discount.percent === null ? null : Number(discount.percent),
 			amount: discount.amount,
 			isActive: discount.isActive,
 			categoryIds: discount.categories.map((row) => row.categoryId),
@@ -74,13 +97,18 @@ export const actions: Actions = {
 		const scope: Scope = scopeRaw;
 
 		// У базі стоїть CHECK: заповнене або percent, або amount — не обидва.
-		let percent: number | null = null;
+		let percent: string | null = null;
 		let amount: number | null = null;
 
 		if (kind === 'percent') {
-			percent = Number(valueRaw);
-			if (!Number.isInteger(percent) || percent < 1 || percent > 90) {
-				return fail(400, { message: 'Відсоток — ціле число від 1 до 90' });
+			percent = parsePercent(valueRaw);
+			if (percent === null) {
+				return fail(400, { message: 'Відсоток від 1 до 90, напр. 20 або 33.6' });
+			}
+			if (isFractional(percent) && !(await acceptsFraction())) {
+				return fail(400, {
+					message: 'Дробові відсотки запрацюють, щойно сайт оновить базу. Поки — ціле число'
+				});
 			}
 		} else {
 			amount = parseUahToKop(valueRaw);
