@@ -13,6 +13,7 @@
 		RANGE_LABELS,
 		SOURCES,
 		SOURCE_LABELS,
+		type FunnelStep,
 		type RangeKey,
 		type SourceKey
 	} from '$lib/traffic';
@@ -134,6 +135,44 @@
 		{/if}
 		{label}
 	</button>
+{/snippet}
+
+{#snippet funnelRow(
+	icon: string,
+	label: string,
+	steps: FunnelStep[],
+	conversion: number | null,
+	selected = false
+)}
+	<tr class="{stripe} {selected ? 'bg-primary/10! hover:bg-primary/12!' : ''}">
+		<td class="h-9 rounded-l-[10px] px-3 whitespace-nowrap">
+			<span class="flex items-center gap-2.5">
+				<SourceIcon source={icon} size={16} />
+				{label}
+			</span>
+		</td>
+		{#each steps as step (step.key)}
+			<td class="h-9 px-3 text-right whitespace-nowrap tabular-nums">
+				{number(step.count)}
+				{#if step.pass !== null}
+					<span
+						class="ml-1 text-[11px] {step.worst
+							? 'font-medium text-destructive'
+							: 'text-muted-foreground'}"
+					>
+						{step.pass}%
+					</span>
+				{/if}
+			</td>
+		{/each}
+		<td class="h-9 rounded-r-[10px] px-3 text-right">
+			<span
+				class="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary tabular-nums"
+			>
+				{percent(conversion)}
+			</span>
+		</td>
+	</tr>
 {/snippet}
 
 {#snippet tile(label: string, value: string, note?: string, accent = false)}
@@ -346,41 +385,36 @@
 					</thead>
 					<tbody>
 						{#each ready.sources as row (row.source)}
-							<tr
-								class="{stripe} {data.source === row.source
-									? 'bg-primary/10! hover:bg-primary/12!'
-									: ''}"
-							>
-								<td class="h-9 rounded-l-[10px] px-3">
-									<span class="flex items-center gap-2.5">
-										<SourceIcon source={row.source} size={16} />
-										{sourceLabel(row.source)}
-									</span>
-								</td>
-								{#each row.funnel as step (step.key)}
-									<td class="h-9 px-3 text-right whitespace-nowrap tabular-nums">
-										{number(step.count)}
-										{#if step.pass !== null}
-											<span
-												class="ml-1 text-[11px] {step.worst
-													? 'font-medium text-destructive'
-													: 'text-muted-foreground'}"
-											>
-												{step.pass}%
-											</span>
-										{/if}
-									</td>
-								{/each}
-								<td class="h-9 rounded-r-[10px] px-3 text-right">
-									<span
-										class="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary tabular-nums"
-									>
-										{percent(row.conversion)}
-									</span>
-								</td>
-							</tr>
+							{@render funnelRow(
+								row.source,
+								sourceLabel(row.source),
+								row.funnel,
+								row.conversion,
+								data.source === row.source
+							)}
 						{/each}
 					</tbody>
+					{#if ready.wheel}
+						<!-- Колесо — не джерело, а те, що сталося на сайті. Та сама воронка, тож
+						     «Крутили» одразу видно поруч із «Бачили, не крутили» і з джерелами. -->
+						<tbody>
+							<tr>
+								<td
+									colspan={FUNNEL_STEPS.length + 2}
+									class="border-t border-foreground/8 px-3 pt-4 pb-1.5 text-xs text-muted-foreground"
+								>
+									<span class="font-medium text-foreground">Колесо фортуни</span>
+									· побачили {number(ready.wheel.seen)} · крутили {number(ready.wheel.spun)}
+									({percent(ready.wheel.spunRate)})
+								</td>
+							</tr>
+						</tbody>
+						<tbody>
+							{#each ready.wheel.rows as row (row.group)}
+								{@render funnelRow('wheel', row.label, row.funnel, row.conversion)}
+							{/each}
+						</tbody>
+					{/if}
 				</table>
 			</div>
 

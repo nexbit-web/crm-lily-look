@@ -59,7 +59,7 @@ describe('список замовлень', () => {
 			const result = open();
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			expect(started).toBe(3);
+			expect(started).toBe(4);
 
 			gate.resolve();
 			await result;
@@ -125,6 +125,42 @@ describe('список замовлень', () => {
 			await open('?status=NEW');
 
 			expect(db.groupBy.mock.calls[0][0].where.status).toBeUndefined();
+		});
+
+		it('«З призом колеса» — лише замовлення з призом, і лічильники теж', async () => {
+			const data = (await open('?prize=1&status=NEW')) as Result & { prizeOnly: boolean };
+
+			expect(data.prizeOnly).toBe(true);
+			expect(db.findMany.mock.calls[0][0].where).toMatchObject({
+				prize: { not: null },
+				status: 'NEW'
+			});
+			expect(db.groupBy.mock.calls[0][0].where.prize).toEqual({ not: null });
+		});
+
+		it('без фільтра приз не звужує вибірку', async () => {
+			const data = (await open('?prize=yes')) as Result & { prizeOnly: boolean };
+
+			expect(data.prizeOnly).toBe(false);
+			expect(db.findMany.mock.calls[0][0].where.prize).toBeUndefined();
+		});
+
+		it('чип призу рахує з урахуванням пошуку, але без статусу', async () => {
+			await open('?q=Олена&status=NEW');
+
+			const prizeCount = db.count.mock.calls
+				.map((call) => call[0].where)
+				.find((where) => where.prize);
+			expect(prizeCount).toMatchObject({ prize: { not: null } });
+			expect(prizeCount.OR).toHaveLength(3);
+			expect(prizeCount.status).toBeUndefined();
+		});
+
+		it('приз, знижка за приз і безкоштовна доставка приходять у картку', async () => {
+			await open();
+
+			const { select } = db.findMany.mock.calls[0][0];
+			expect(select).toMatchObject({ prize: true, prizeDiscount: true, prizeFreeDelivery: true });
 		});
 
 		it('сміття в номері сторінки не ламає вибірку', async () => {

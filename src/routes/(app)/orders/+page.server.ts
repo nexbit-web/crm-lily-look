@@ -9,6 +9,8 @@ const PER_PAGE = 20;
 export const load: PageServerLoad = async ({ url }) => {
 	const query = (url.searchParams.get('q') ?? '').trim();
 	const statusParam = url.searchParams.get('status') ?? '';
+	// Лише замовлення, де спрацював приз колеса фортуни.
+	const prizeOnly = url.searchParams.get('prize') === '1';
 	const status: OrderStatusKey | null = isOrderStatus(statusParam) ? statusParam : null;
 	const rawPage = Number(url.searchParams.get('page') ?? '1');
 	const requestedPage = Math.max(1, Number.isFinite(rawPage) ? Math.trunc(rawPage) : 1);
@@ -25,7 +27,9 @@ export const load: PageServerLoad = async ({ url }) => {
 			}
 		: {};
 
-	const where: Prisma.OrderWhereInput = status ? { ...search, status } : search;
+	const withPrize: Prisma.OrderWhereInput = { ...search, prize: { not: null } };
+	const scope = prizeOnly ? withPrize : search;
+	const where: Prisma.OrderWhereInput = status ? { ...scope, status } : scope;
 
 	// Беремо лише те, що показує сторінка: позиції замовлення разом із карткою
 	// (окремого запиту при розгортанні немає), але без службових полів на
@@ -51,6 +55,9 @@ export const load: PageServerLoad = async ({ url }) => {
 				subtotal: true,
 				deliveryCost: true,
 				total: true,
+				prize: true,
+				prizeDiscount: true,
+				prizeFreeDelivery: true,
 				createdAt: true,
 				items: {
 					orderBy: { id: 'asc' },
@@ -73,10 +80,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	// Сторінку замовлень просимо одразу, ще не знаючи total: у переважній
 	// більшості випадків вона в межах діапазону, і тоді все обходиться однією
 	// подорожжю до бази замість двох.
-	const [grouped, total, firstTry] = await Promise.all([
-		prisma.order.groupBy({ by: ['status'], where: search, _count: { _all: true } }),
+	const [grouped, total, firstTry, prizeCount] = await Promise.all([
+		prisma.order.groupBy({ by: ['status'], where: scope, _count: { _all: true } }),
 		prisma.order.count({ where }),
-		fetchPage(requestedPage)
+		fetchPage(requestedPage),
+		// Для чипа «З призом колеса» — у тому ж пакеті, без окремої подорожі.
+		prisma.order.count({ where: withPrize })
 	]);
 
 	const counts: Record<string, number> = { ALL: 0 };
@@ -92,7 +101,18 @@ export const load: PageServerLoad = async ({ url }) => {
 	const page = Math.min(requestedPage, pageCount);
 	const orders = page === requestedPage ? firstTry : await fetchPage(page);
 
-	return { orders, counts, total, page, pageCount, perPage: PER_PAGE, query, status };
+	return {
+		orders,
+		counts,
+		prizeCount,
+		total,
+		page,
+		pageCount,
+		perPage: PER_PAGE,
+		query,
+		status,
+		prizeOnly
+	};
 };
 
 export const actions: Actions = {

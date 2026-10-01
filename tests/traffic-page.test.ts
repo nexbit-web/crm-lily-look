@@ -81,12 +81,14 @@ function html(data: object): string {
 
 /** Текст сторінки без розмітки й службових коментарів Svelte. */
 function text(data: object): string {
-	return html(data)
-		.replace(/<!--[\s\S]*?-->/g, '')
-		.replace(/<[^>]+>/g, ' ')
-		// Нерозривні пробіли з toLocaleString('uk-UA') — звичайними.
-		.replace(/&nbsp;|\u00a0|\u202f/g, ' ')
-		.replace(/\s+/g, ' ');
+	return (
+		html(data)
+			.replace(/<!--[\s\S]*?-->/g, '')
+			.replace(/<[^>]+>/g, ' ')
+			// Нерозривні пробіли з toLocaleString('uk-UA') — звичайними.
+			.replace(/&nbsp;|\u00a0|\u202f/g, ' ')
+			.replace(/\s+/g, ' ')
+	);
 }
 
 /** Шматок розмітки розділу — від його заголовка до наступного. */
@@ -161,6 +163,39 @@ describe('сторінка відвідуваності: що бачить лю�
 		expect(page).toContain('Напряму');
 		expect(page).toContain('#1877f2'); // синя «f» Facebook
 		expect(text(ready()).split('Джерела')[1]).toMatch(/Facebook 100 60 60% 12 20%/);
+	});
+
+	it('колесо — рядками в таблиці джерел, з підсумком «побачили / крутили»', () => {
+		const wheel = {
+			seen: 100,
+			spun: 20,
+			spunRate: 20,
+			rows: [
+				{
+					group: 'spun',
+					label: 'Крутили колесо',
+					visitors: 20,
+					conversion: 10,
+					funnel: funnel({ visitors: 20, viewedProduct: 15, added: 6, checkout: 3, ordered: 2 })
+				},
+				{
+					group: 'shown',
+					label: 'Бачили, не крутили',
+					visitors: 80,
+					conversion: 1,
+					funnel: funnel({ visitors: 80, viewedProduct: 40, added: 8, checkout: 2, ordered: 1 })
+				}
+			]
+		};
+		const page = text(ready({ wheel })).split('Джерела')[1];
+
+		expect(page).toContain('Колесо фортуни · побачили 100 · крутили 20 (20%)');
+		expect(page).toMatch(/Крутили колесо 20 15 75% 6 40% 3 50% 2 67% 10%/);
+		expect(page).toMatch(/Бачили, не крутили 80 .* 1%/);
+	});
+
+	it('колесо ще ніхто не бачив — у джерелах його немає', () => {
+		expect(text(ready({ wheel: null }))).not.toContain('Колесо фортуни');
 	});
 
 	it('вибране джерело підсвічене в фільтрі', () => {

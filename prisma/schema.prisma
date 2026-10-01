@@ -325,6 +325,13 @@ model Order {
   /// Ідентифікатор транзакції у провайдера.
   paymentRef      String?
 
+  /// Приз колеса фортуни (off3, off5, off7, off10, delivery). Пише сайт, CRM лише показує.
+  prize             String?
+  /// Скільки знижки дав приз, у копійках. Уже враховано в total.
+  prizeDiscount     Int     @default(0)
+  /// Доставку оплачує магазин: у накладній платник — відправник.
+  prizeFreeDelivery Boolean @default(false)
+
   items   OrderItem[]
   /// Історія змін статусу: пише і бот, і CRM.
   events  OrderEvent[]

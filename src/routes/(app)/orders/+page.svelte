@@ -6,13 +6,14 @@
 	import { goto } from '$app/navigation';
 	import { navigating, page as pageState } from '$app/state';
 	import toast from 'svelte-hot-french-toast';
-	import { Search, X, Check, ChevronRight, ImageOff, Package } from '@lucide/svelte';
+	import { Search, X, Check, ChevronRight, ImageOff, Package, Gift } from '@lucide/svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Pagination from '$lib/components/ui/pagination/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { formatUah } from '$lib/money';
 	import { cloudinaryThumb } from '$lib/cloudinary-url';
+	import { prizeLabel } from '$lib/wheel';
 	import {
 		ORDER_STATUSES,
 		PAYMENT_STATUSES,
@@ -161,6 +162,19 @@
 				{data.counts[key]}
 			</button>
 		{/each}
+
+		<span class="mx-1 w-px self-stretch bg-foreground/10" aria-hidden="true"></span>
+		<button
+			type="button"
+			aria-pressed={data.prizeOnly}
+			class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors {data.prizeOnly
+				? 'bg-foreground text-background'
+				: 'bg-muted/60 text-muted-foreground hover:text-foreground'}"
+			onclick={() => navigate({ prize: data.prizeOnly ? null : '1' })}
+		>
+			<Gift size={13} />
+			З призом колеса {data.prizeCount}
+		</button>
 	</div>
 
 	{#if data.orders.length === 0}
@@ -169,6 +183,8 @@
 			<p class="text-sm text-muted-foreground">
 				{#if data.query}
 					За запитом «{data.query}» нічого не знайшлось.
+				{:else if data.prizeOnly}
+					Замовлень з призом колеса ще немає.
 				{:else if data.status}
 					У цьому статусі замовлень немає.
 				{:else}
@@ -199,6 +215,13 @@
 								<span class="font-mono text-xs font-normal text-muted-foreground">
 									{order.number}
 								</span>
+								{#if order.prize}
+									<Gift
+										size={13}
+										class="ml-0.5 inline align-[-2px] text-primary"
+										aria-label="З призом колеса"
+									/>
+								{/if}
 							</p>
 							<p class="truncate text-xs text-muted-foreground">
 								{STATUS_LABELS[order.status as OrderStatusKey]} · {when(order.createdAt, false)} ·
@@ -278,6 +301,14 @@
 			<Dialog.Header class="gap-1">
 				<Dialog.Title class="font-mono text-xl tracking-tight">{order.number}</Dialog.Title>
 				<Dialog.Description>{when(order.createdAt)}</Dialog.Description>
+				{#if order.prize}
+					<span
+						class="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+					>
+						<Gift size={13} />
+						Приз колеса: {prizeLabel(order.prize)}
+					</span>
+				{/if}
 			</Dialog.Header>
 
 			<!-- Статус і оплата застосовуються одразу: кнопка «Зберегти» тут була б
@@ -362,6 +393,13 @@
 						{DELIVERY_LABELS[order.deliveryMethod as DeliveryMethodKey]}
 					</span>
 				</div>
+				{#if order.prizeFreeDelivery}
+					<div class="mx-4 h-px bg-foreground/10"></div>
+					<div class="space-y-0.5 px-4 py-3">
+						<p class="text-sm font-medium text-primary">Доставку оплачує магазин</p>
+						<p class="text-xs text-muted-foreground">У накладній платник — відправник</p>
+					</div>
+				{/if}
 				{#if order.deliveryCity}
 					<div class="mx-4 h-px bg-foreground/10"></div>
 					<div class="flex items-baseline justify-between gap-4 px-4 py-3">
@@ -430,9 +468,22 @@
 				<div class="flex items-baseline justify-between gap-4 px-4 py-2.5">
 					<span class="text-sm text-muted-foreground">Доставка</span>
 					<span class="text-sm tabular-nums">
-						{order.deliveryCost === 0 ? 'За тарифом' : formatUah(order.deliveryCost)}
+						{#if order.prizeFreeDelivery}
+							Оплачує магазин
+						{:else}
+							{order.deliveryCost === 0 ? 'За тарифом' : formatUah(order.deliveryCost)}
+						{/if}
 					</span>
 				</div>
+				{#if order.prizeDiscount > 0}
+					<div class="mx-4 h-px bg-foreground/10"></div>
+					<div class="flex items-baseline justify-between gap-4 px-4 py-2.5">
+						<span class="text-sm text-muted-foreground">
+							Знижка за приз{order.prize ? ` ${prizeLabel(order.prize)}` : ''}
+						</span>
+						<span class="text-sm text-primary tabular-nums">−{formatUah(order.prizeDiscount)}</span>
+					</div>
+				{/if}
 				<div class="mx-4 h-px bg-foreground/10"></div>
 				<div class="flex items-baseline justify-between gap-4 px-4 py-3">
 					<span class="text-sm font-medium">Разом</span>

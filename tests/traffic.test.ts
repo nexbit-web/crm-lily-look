@@ -14,7 +14,7 @@ vi.mock('$lib/server/db', () => ({
 const { load } = await import('../src/routes/(app)/traffic/+page.server');
 
 /** Порядок запитів у завантажувачі. */
-const Q = { totals: 0, days: 1, sources: 2, products: 3, exits: 4, devices: 5, pages: 6 };
+const Q = { totals: 0, days: 1, sources: 2, products: 3, exits: 4, devices: 5, pages: 6, wheel: 7 };
 const QUERIES = Object.keys(Q).length;
 
 type Step = { key: string; count: number; pass: number | null; worst: boolean };
@@ -52,6 +52,18 @@ type Loaded = {
 	exits?: { page: string; label: string; count: number; share: number }[];
 	devices?: { device: string; label: string; visitors: number; share: number }[];
 	pages?: { path: string; label: string; views: number; visitors: number }[];
+	wheel?: {
+		seen: number;
+		spun: number;
+		spunRate: number | null;
+		rows: {
+			group: string;
+			label: string;
+			visitors: number;
+			conversion: number | null;
+			funnel: Step[];
+		}[];
+	} | null;
 };
 
 function open(search = '', role: string | null = 'MANAGER') {
@@ -61,7 +73,7 @@ function open(search = '', role: string | null = 'MANAGER') {
 	});
 }
 
-const TOTALS = {
+const QUERIESS = {
 	visitors: 100,
 	views: 400,
 	viewed_product: 60,
@@ -78,21 +90,23 @@ type Answers = {
 	exits?: object[];
 	devices?: object[];
 	pages?: object[];
+	wheel?: object[];
 	crmOrders?: number;
 };
 
 /** Відповіді в тому порядку, у якому їх просить завантажувач. */
 function answers(rows: Answers = {}) {
 	db.queryRaw
-		.mockResolvedValueOnce([rows.totals ?? TOTALS])
+		.mockResolvedValueOnce([rows.totals ?? QUERIESS])
 		.mockResolvedValueOnce(rows.days ?? [])
-		.mockResolvedValueOnce(rows.sources ?? [{ source: 'facebook', ...TOTALS }])
+		.mockResolvedValueOnce(rows.sources ?? [{ source: 'facebook', ...QUERIESS }])
 		.mockResolvedValueOnce(rows.products ?? [])
 		.mockResolvedValueOnce(rows.exits ?? [])
 		.mockResolvedValueOnce(rows.devices ?? [])
 		.mockResolvedValueOnce(
 			rows.pages ?? [{ page: 'catalog', path: '/catalog/palto', views: 3, visitors: 2 }]
-		);
+		)
+		.mockResolvedValueOnce(rows.wheel ?? []);
 	db.orderCount.mockResolvedValue(rows.crmOrders ?? 3);
 }
 
@@ -225,7 +239,8 @@ describe('сторінка відвідуваності', () => {
 			await open();
 
 			for (let call = 0; call < QUERIES; call++) {
-				expect(sql(call).trim()).toMatch(/^SELECT\b/i);
+				// Читання: SELECT або WITH … SELECT (CTE).
+				expect(sql(call).trim()).toMatch(/^(SELECT|WITH)\b/i);
 				expect(sql(call)).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|CREATE)\b/i);
 			}
 		});
@@ -265,7 +280,7 @@ describe('сторінка відвідуваності', () => {
 			answers();
 			await open();
 
-			// Сім звітів і звірка з замовленнями CRM — жодної послідовної подорожі.
+			// Вісім звітів (із колесом) і звірка з замовленнями CRM — жодної послідовної подорожі.
 			expect(db.queryRaw).toHaveBeenCalledTimes(QUERIES);
 			expect(db.orderCount).toHaveBeenCalledTimes(1);
 		});
@@ -283,7 +298,7 @@ describe('сторінка відвідуваності', () => {
 			expect(db.queryRaw).toHaveBeenCalledTimes(QUERIES);
 			expect(db.orderCount).toHaveBeenCalledTimes(1);
 
-			pending.forEach((item, index) => item.resolve(index === Q.totals ? [TOTALS] : []));
+			pending.forEach((item, index) => item.resolve(index === Q.totals ? [QUERIESS] : []));
 			orders.resolve(0);
 			expect((await result).state).toBe('ready');
 		});
@@ -340,7 +355,7 @@ describe('сторінка відвідуваності', () => {
 		});
 
 		it('порожній звіт не тягне зайвого на сторінку', async () => {
-			answers({ totals: { ...TOTALS, visitors: 0 } });
+			answers({ totals: { ...QUERIESS, visitors: 0 } });
 			const data = await open();
 
 			expect(data.state).toBe('empty');
@@ -409,7 +424,8 @@ describe('сторінка відвідуваності', () => {
 			await open('?source=instagram');
 
 			for (let call = 0; call < QUERIES; call++) {
-				if (call === Q.sources) expect(params(call)).not.toContain('instagram');
+				// Колесо стоїть у таблиці джерел, тож, як і вона, фільтра джерела не має.
+				if (call === Q.sources || call === Q.wheel) expect(params(call)).not.toContain('instagram');
 				else expect(params(call)).toContain('instagram');
 			}
 		});
@@ -420,6 +436,74 @@ describe('сторінка відвідуваності', () => {
 
 			expect(params(Q.totals)).toContain(null);
 			expect(sql(Q.totals)).toContain('::text IS NULL OR source = ');
+		});
+	});
+
+	describe('колесо фортуни в таблиці джерел', () => {
+		const SPUN = {
+			group: 'spun',
+			visitors: 20,
+			views: 0,
+			viewed_product: 15,
+			added: 6,
+			checkout: 3,
+			ordered: 2
+		};
+		const SHOWN = {
+			group: 'shown',
+			visitors: 80,
+			views: 0,
+			viewed_product: 40,
+			added: 8,
+			checkout: 2,
+			ordered: 1
+		};
+
+		it('два рядки — «Крутили колесо» і «Бачили, не крутили», завжди в цьому порядку', async () => {
+			answers({ wheel: [SHOWN, SPUN] });
+			const { wheel } = await open();
+
+			expect(wheel?.rows.map((row) => [row.label, row.visitors, row.conversion])).toEqual([
+				['Крутили колесо', 20, 10],
+				['Бачили, не крутили', 80, 1]
+			]);
+		});
+
+		it('підсумок: скільки побачили й скільки з них крутили', async () => {
+			answers({ wheel: [SPUN, SHOWN] });
+			const { wheel } = await open();
+
+			expect(wheel).toMatchObject({ seen: 100, spun: 20, spunRate: 20 });
+		});
+
+		it('кожен рядок — та сама воронка, що й у джерел', async () => {
+			answers({ wheel: [SPUN, SHOWN] });
+			const { wheel } = await open();
+
+			expect(wheel?.rows[0].funnel.map((step) => step.count)).toEqual([20, 15, 6, 3, 2]);
+		});
+
+		it('ніхто не крутив — рядок усе одно є, з нулями', async () => {
+			answers({ wheel: [SHOWN] });
+			const { wheel } = await open();
+
+			expect(wheel?.rows[0]).toMatchObject({ group: 'spun', visitors: 0, conversion: null });
+			expect(wheel?.spunRate).toBe(0);
+		});
+
+		it('колесо ще ніхто не бачив — рядків колеса немає', async () => {
+			answers({ wheel: [] });
+			expect((await open()).wheel).toBeNull();
+		});
+
+		it('один запит до PageEvent за період, без представлень сайту', async () => {
+			answers();
+			await open();
+
+			expect(sql(Q.wheel)).toContain('FROM "PageEvent"');
+			expect(sql(Q.wheel)).not.toMatch(/Wheel(DailyStats|Effect)/);
+			expect(sql(Q.wheel)).toContain("type = 'wheel_spin'");
+			expect(params(Q.wheel).filter((value) => value instanceof Date)).toHaveLength(2);
 		});
 	});
 
@@ -444,7 +528,7 @@ describe('сторінка відвідуваності', () => {
 		});
 
 		it('порожня таблиця — «даних немає»', async () => {
-			answers({ totals: { ...TOTALS, visitors: 0 } });
+			answers({ totals: { ...QUERIESS, visitors: 0 } });
 			expect((await open()).state).toBe('empty');
 		});
 
@@ -502,8 +586,8 @@ describe('сторінка відвідуваності', () => {
 		it('джерела: у кожного своя воронка й конверсія', async () => {
 			answers({
 				sources: [
-					{ source: 'facebook', ...TOTALS },
-					{ source: 'direct', ...TOTALS, visitors: 10, ordered: 0 }
+					{ source: 'facebook', ...QUERIESS },
+					{ source: 'direct', ...QUERIESS, visitors: 10, ordered: 0 }
 				]
 			});
 			const data = await open();

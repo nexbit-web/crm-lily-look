@@ -14,6 +14,23 @@
 	}: { source: string; size?: number; mono?: boolean } = $props();
 
 	const gradient = $props.id();
+
+	// Сектори колеса: точки на колі радіуса 11 через кожні 60°, від верхньої.
+	const RIM = [
+		[12, 1],
+		[21.53, 6.5],
+		[21.53, 17.5],
+		[12, 23],
+		[2.47, 17.5],
+		[2.47, 6.5]
+	];
+	const WHEEL_SLICES = ['#ff453a', '#ff9f0a', '#ffd60a', '#30d158', '#0a84ff', '#bf5af2'].map(
+		(color, index) => {
+			const [x1, y1] = RIM[index];
+			const [x2, y2] = RIM[(index + 1) % RIM.length];
+			return { color, d: `M12 12L${x1} ${y1}A11 11 0 0 1 ${x2} ${y2}Z` };
+		}
+	);
 </script>
 
 {#if source === 'facebook'}
@@ -67,6 +84,21 @@
 			fill={mono ? 'currentColor' : '#34a853'}
 			d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
 		/>
+	</svg>
+{:else if source === 'wheel'}
+	<!-- Колесо фортуни: шість кольорових секторів, як на сайті. -->
+	<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" class="shrink-0">
+		{#if mono}
+			<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+				<circle cx="12" cy="12" r="10" />
+				<path d="M12 2v20M3.34 7l17.32 10M3.34 17 20.66 7" />
+			</g>
+		{:else}
+			{#each WHEEL_SLICES as slice (slice.color)}
+				<path d={slice.d} fill={slice.color} />
+			{/each}
+			<circle cx="12" cy="12" r="2.6" fill="#fff" />
+		{/if}
 	</svg>
 {:else if source === 'direct'}
 	<MousePointerClick {size} class="shrink-0 {mono ? '' : 'text-muted-foreground'}" />

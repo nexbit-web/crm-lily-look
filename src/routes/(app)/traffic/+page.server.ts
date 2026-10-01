@@ -12,6 +12,7 @@ import {
 	type FunnelCounts,
 	type SourceKey
 } from '$lib/traffic';
+import { WHEEL_GROUP_LABELS } from '$lib/wheel';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -56,6 +57,7 @@ type ProductRow = {
 type ExitRow = { page: string; count: number };
 type DeviceRow = { device: string; visitors: number };
 type PageRow = { page: string; path: string; views: number; visitors: number };
+type WheelRow = FunnelRow & { group: 'spun' | 'shown' };
 
 function counts(row: FunnelRow | undefined): FunnelCounts {
 	return {
@@ -76,6 +78,30 @@ async function tableExists(): Promise<boolean> {
 		SELECT to_regclass('public."PageEvent"') IS NOT NULL AS exists
 	`;
 	return Boolean(row?.exists);
+}
+
+/** Колесо для таблиці джерел: два рядки й підсумок «побачили / крутили». null — ніхто не бачив. */
+function wheelReport(rows: WheelRow[]) {
+	const spun = rows.find((row) => row.group === 'spun');
+	const shown = rows.find((row) => row.group === 'shown');
+	const seen = (spun?.visitors ?? 0) + (shown?.visitors ?? 0);
+	if (seen === 0) return null;
+
+	return {
+		seen,
+		spun: spun?.visitors ?? 0,
+		spunRate: rate(spun?.visitors ?? 0, seen),
+		rows: (['spun', 'shown'] as const).map((group) => {
+			const row = rows.find((item) => item.group === group);
+			return {
+				group,
+				label: WHEEL_GROUP_LABELS[group],
+				visitors: row?.visitors ?? 0,
+				conversion: rate(row?.ordered ?? 0, row?.visitors ?? 0),
+				funnel: funnel(counts(row))
+			};
+		})
+	};
 }
 
 export const load: PageServerLoad = async ({ url, locals }) => {
@@ -203,6 +229,34 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 				LIMIT ${PAGES_SHOWN}
 			`,
 
+			// Колесо фортуни як ще одна «група» поруч із джерелами: ті, хто крутив,
+			// і ті, хто бачив, але закрив. Та сама воронка, тож рядки порівнюються
+			// з джерелами напряму. Як і порівняння джерел — без фільтра джерела.
+			prisma.$queryRaw<WheelRow[]>`
+				WITH people AS (
+					SELECT "visitorId",
+					       bool_or(type = 'wheel_spin')                                         AS spun,
+					       bool_or(type = 'wheel_shown' OR (type = 'view' AND path = '/wheel')) AS shown,
+					       bool_or(type = 'view' AND page = 'product')                          AS viewed_product,
+					       bool_or(type = 'add_to_cart')                                        AS added,
+					       bool_or(type = 'view' AND page = 'checkout')                         AS checkout,
+					       bool_or(type = 'order')                                              AS ordered
+					FROM "PageEvent"
+					WHERE "createdAt" >= ${start} AND "createdAt" < ${end}
+					GROUP BY "visitorId"
+				)
+				SELECT CASE WHEN spun THEN 'spun' ELSE 'shown' END AS "group",
+				       count(*)::int                                AS visitors,
+				       0                                            AS views,
+				       count(*) FILTER (WHERE viewed_product)::int  AS viewed_product,
+				       count(*) FILTER (WHERE added)::int           AS added,
+				       count(*) FILTER (WHERE checkout)::int        AS checkout,
+				       count(*) FILTER (WHERE ordered)::int         AS ordered
+				FROM people
+				WHERE spun OR shown
+				GROUP BY 1
+			`,
+
 			// Для звірки: скільки замовлень за ці ж дні записала сама CRM.
 			prisma.order.count({ where: { createdAt: { gte: start, lt: end } } })
 		]);
@@ -211,8 +265,17 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		throw err;
 	}
 
-	const [[totalsRow], dayRows, sourceRows, productRows, exitRows, deviceRows, pageRows, crmOrders] =
-		result;
+	const [
+		[totalsRow],
+		dayRows,
+		sourceRows,
+		productRows,
+		exitRows,
+		deviceRows,
+		pageRows,
+		wheelRows,
+		crmOrders
+	] = result;
 
 	const totals = counts(totalsRow);
 	if (totals.visitors === 0) return { ...base, state: 'empty' as const };
@@ -231,6 +294,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	return {
 		...base,
 		state: 'ready' as const,
+		wheel: wheelReport(wheelRows),
 		crmOrders,
 		totals: {
 			visitors: totals.visitors,
