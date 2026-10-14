@@ -105,8 +105,8 @@ function wheelReport(rows: WheelRow[]) {
 }
 
 export const load: PageServerLoad = async ({ url, locals }) => {
-	if (!atLeast(locals.user?.role, 'MANAGER')) {
-		error(403, 'Розділ доступний менеджерам і адміністраторам');
+	if (!atLeast(locals.user?.role, 'ADMIN')) {
+		error(403, 'Розділ доступний лише адміністраторам');
 	}
 
 	const today = dayKey(new Date());

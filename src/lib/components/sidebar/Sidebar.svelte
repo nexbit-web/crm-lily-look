@@ -32,13 +32,13 @@
 			href: '/statistics',
 			label: 'Статистика',
 			icon: LayoutDashboard,
-			min: 'MANAGER'
+			min: 'ADMIN'
 		},
-		{ href: '/traffic', label: 'Відвідуваність', icon: Eye, min: 'MANAGER' },
+		{ href: '/traffic', label: 'Відвідуваність', icon: Eye, min: 'ADMIN' },
 		{ href: '/orders', label: 'Замовлення', icon: Package },
 		{ href: '/products', label: 'Товари', icon: Shirt },
 		{ href: '/categories', label: 'Категорії', icon: FolderTree },
-		{ href: '/discounts', label: 'Знижки', icon: BadgePercent, min: 'MANAGER' },
+		{ href: '/discounts', label: 'Знижки', icon: BadgePercent, min: 'ADMIN' },
 		{ href: '/admins', label: 'Адмін', icon: ShieldUser, min: 'ADMIN' },
 		{ href: '/telegram', label: 'Telegram-бот', icon: Bot, min: 'ADMIN' }
 	];

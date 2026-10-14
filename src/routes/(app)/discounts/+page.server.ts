@@ -1,9 +1,16 @@
-import { fail } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { categoryOptions } from '$lib/server/categories';
 import { parseUahToKop } from '$lib/money';
 import { isFractional, parsePercent } from '$lib/percent';
+import { atLeast } from '$lib/permissions';
 import type { Actions, PageServerLoad } from './$types';
+
+function requireAdmin(locals: App.Locals) {
+	if (!atLeast(locals.user?.role, 'ADMIN')) {
+		error(403, 'Розділ доступний лише адміністраторам');
+	}
+}
 
 /**
  * Чи прийме колонка дробовий відсоток. Поки вона `integer`, база мовчки
@@ -33,7 +40,9 @@ function isScope(value: string): value is Scope {
 	return (SCOPES as readonly string[]).includes(value);
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	requireAdmin(locals);
+
 	const [discounts, categories, products] = await Promise.all([
 		prisma.discount.findMany({
 			// Увімкнені — зверху: саме вони зараз впливають на ціни.
@@ -82,7 +91,8 @@ function parseJson(raw: FormDataEntryValue | null): string[] {
 
 export const actions: Actions = {
 	/** Одна дія на створення й редагування: різниця лише в наявності id. */
-	save: async ({ request }) => {
+	save: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 		const name = String(form.get('name') ?? '').trim();
@@ -182,7 +192,8 @@ export const actions: Actions = {
 	},
 
 	/** Перемикач прямо в списку: увімкнути чи вимкнути знижку одним кліком. */
-	toggle: async ({ request }) => {
+	toggle: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 
@@ -196,7 +207,8 @@ export const actions: Actions = {
 		return { toggled: true };
 	},
 
-	delete: async ({ request }) => {
+	delete: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 

@@ -17,8 +17,8 @@ type TopRow = { id: string | null; name: string; units: number; revenue: number 
 export const load: PageServerLoad = async ({ url, locals }) => {
 	// Сторінка з виручкою — не для операторів. Сайдбар її й так ховає, але
 	// прямий перехід за адресою має впертись у ту саму перевірку.
-	if (!atLeast(locals.user?.role, 'MANAGER')) {
-		error(403, 'Розділ доступний менеджерам і адміністраторам');
+	if (!atLeast(locals.user?.role, 'ADMIN')) {
+		error(403, 'Розділ доступний лише адміністраторам');
 	}
 
 	const periodParam = url.searchParams.get('period') ?? '';
