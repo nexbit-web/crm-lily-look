@@ -6,7 +6,7 @@ vi.mock('$lib/server/db', () => ({ prisma: { order: { count: orderCount } } }));
 
 const { load } = await import('../src/routes/(app)/+layout.server');
 
-type Result = { user: Record<string, unknown>; newOrders: number };
+type Result = { user: Record<string, unknown>; newOrders: number; accent: string };
 
 const user = {
 	id: 'u1',
@@ -23,8 +23,9 @@ const user = {
  * `url` віддаємо через Proxy: SvelteKit саме так і стежить, чого торкнувся
  * load, і будь-яке звернення тут означало б перезапуск на кожному переході.
  */
-function open(locals: { user: unknown }) {
+function open(locals: { user: unknown }, jar: Record<string, string> = {}) {
 	const touched: string[] = [];
+	const cookies = { get: (name: string) => jar[name] };
 	const url = new Proxy(new URL('http://localhost/products?page=2'), {
 		get(target, prop, receiver) {
 			touched.push(String(prop));
@@ -32,7 +33,12 @@ function open(locals: { user: unknown }) {
 		}
 	});
 
-	const result = (load as unknown as (e: unknown) => Promise<Result>)({ locals, url });
+	const result = (load as unknown as (e: unknown) => Promise<Result>)({
+		locals,
+		url,
+		cookies,
+		depends: () => {}
+	});
 	return { touched, result };
 }
 
@@ -63,6 +69,14 @@ describe('спільні дані CRM', () => {
 
 		expect(Object.keys(data.user).sort()).toEqual(['email', 'id', 'name', 'role']);
 		expect(data.newOrders).toBe(3);
+	});
+
+	it('колір теми — з cookie саме цього співробітника', async () => {
+		expect((await open({ user }, { 'crm-accent-u1': 'violet' }).result).accent).toBe('violet');
+		// Чужа cookie (інший співробітник на цьому ж компʼютері) — не наша.
+		expect((await open({ user }, { 'crm-accent-u2': 'violet' }).result).accent).toBe('black');
+		// Невідоме значення — типовий чорний, а не сміття в CSS.
+		expect((await open({ user }, { 'crm-accent-u1': '};body{' }).result).accent).toBe('black');
 	});
 
 	it('без сесії — на сторінку входу, без звернення до бази', async () => {

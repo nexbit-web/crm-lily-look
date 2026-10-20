@@ -153,7 +153,7 @@
 		bind:ref={field}
 		bind:value
 		{placeholder}
-		class="h-10 pr-8 {inputClass}"
+		class="h-8 pr-7 text-[13px] md:text-[13px] {inputClass}"
 		autocomplete="off"
 		role="combobox"
 		aria-expanded={open}
@@ -171,7 +171,7 @@
 			type="button"
 			tabindex={-1}
 			aria-label={label}
-			class="absolute top-1/2 right-1 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+			class="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
 			onpointerdown={(event) => {
 				event.preventDefault();
 				if (open) open = false;

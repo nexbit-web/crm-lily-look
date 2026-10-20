@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { applyAction, enhance } from '$app/forms';
-	import toast from 'svelte-hot-french-toast';
-	import { ChevronLeft } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { goto } from '$app/navigation';
+	import toast from '$lib/toast.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import ProductForm from '$lib/components/product-form.svelte';
+	import ProductBar from '../product-bar.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -19,12 +19,22 @@
 
 <form
 	method="POST"
-	use:enhance={() => {
+	use:enhance={({ formData }) => {
 		submitting = true;
+		const name = String(formData.get('name') ?? '').trim();
 		return async ({ result }) => {
 			submitting = false;
-			if (result.type === 'redirect') toast.success('Товар створено');
-			else if (result.type === 'failure') {
+			if (result.type === 'redirect') {
+				// Картка, як «Task created» у ClickUp: що створили й куди далі.
+				toast.success('Товар створено', {
+					subject: name,
+					description: ' — уже в каталозі CRM',
+					actions: [
+						{ label: 'До списку', run: () => goto('/products') },
+						{ label: 'Додати ще', run: () => goto('/products/new') }
+					]
+				});
+			} else if (result.type === 'failure') {
 				toast.error(String(result.data?.message ?? 'Не вдалося зберегти'));
 			} else if (result.type === 'error') {
 				toast.error(result.error?.message ?? 'Помилка сервера');
@@ -35,34 +45,20 @@
 >
 	<!-- Та сама панель, що й на сторінці товару: перехід між «створити» та
 	     «редагувати» не мусить виглядати як інший застосунок. -->
-	<div
-		class="sticky -top-6 z-30 -mx-6 -mt-6 mb-5 border-b border-border/70 bg-card/95 px-6 py-3 backdrop-blur-xl"
-	>
-		<div class="flex items-center gap-3">
-			<Button
-				href="/products"
-				variant="ghost"
-				size="icon-sm"
-				class="-ml-1.5 shrink-0 rounded-full"
-				aria-label="Назад до списку"
-			>
-				<ChevronLeft size={17} />
-			</Button>
-
-			<h1 class="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">Новий товар</h1>
-
-			<Button
+	<ProductBar title="Новий товар" subtitle="Заповніть основне, розміри й фото">
+		{#snippet actions()}
+			<button
 				type="submit"
-				class="shrink-0 rounded-xl px-5"
+				class="flex h-7 items-center gap-1.5 rounded-[6px] bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
 				disabled={submitting || Boolean(productForm?.isUploading())}
 			>
-				{#if submitting}<Spinner />{/if}
-				Зберегти
-			</Button>
-		</div>
-	</div>
+				{#if submitting}<Spinner class="size-3.5" />{/if}
+				Створити товар
+			</button>
+		{/snippet}
+	</ProductBar>
 
-	<div class="pb-12">
+	<div class="pb-6">
 		<ProductForm
 			bind:this={productForm}
 			categories={data.categories}

@@ -1,9 +1,13 @@
 import { error } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
+import { cached } from '$lib/server/cache';
 import { atLeast } from '$lib/permissions';
 import { isPeriod, PERIOD_DAYS, type PeriodKey } from '$lib/statistics';
 import { dayKey, midnight, shiftKey } from '$lib/server/kyiv';
 import type { PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 /** Відсоток зміни до попереднього такого ж періоду. null — порівнювати нема з чим. */
 function delta(current: number, previous: number): number | null {
@@ -11,21 +15,36 @@ function delta(current: number, previous: number): number | null {
 	return Math.round(((current - previous) / previous) * 100);
 }
 
-type DayRow = { day: string; revenue: number; orders: number };
+type DayRow = { day: string; revenue: number; orders: number; units?: number };
 type TopRow = { id: string | null; name: string; units: number; revenue: number };
 
-export const load: PageServerLoad = async ({ url, locals }) => {
-	// Сторінка з виручкою — не для операторів. Сайдбар її й так ховає, але
-	// прямий перехід за адресою має впертись у ту саму перевірку.
-	if (!atLeast(locals.user?.role, 'ADMIN')) {
-		error(403, 'Розділ доступний лише адміністраторам');
-	}
-
+const loadView = async ({ url }: LoadEvent) => {
 	const periodParam = url.searchParams.get('period') ?? '';
 	const period: PeriodKey = isPeriod(periodParam) ? periodParam : '30';
-	const days = PERIOD_DAYS[period];
-
 	const todayKey = dayKey(new Date());
+
+	// Замовлення приходять із сайту, а статистику дивляться не щохвилини —
+	// пʼять хвилин. Дії із замовленнями в CRM скидають кеш одразу.
+	return cached(`statistics:${period}:${todayKey}`, { tags: ['orders'], ttl: 300 }, () =>
+		report(period, todayKey)
+	);
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	// Сторінка з виручкою — не для операторів. Сайдбар її й так ховає, але
+	// прямий перехід за адресою має впертись у ту саму перевірку.
+	if (!atLeast(event.locals.user?.role, 'ADMIN')) {
+		error(403, 'Розділ доступний лише адміністраторам');
+	}
+	return streamOnFirstLoad(event, loadView(event));
+};
+
+async function report(period: PeriodKey, todayKey: string) {
+	const days = PERIOD_DAYS[period];
 	const startKey = shiftKey(todayKey, -(days - 1));
 	const prevStartKey = shiftKey(todayKey, -(days * 2 - 1));
 	const start = midnight(startKey);
@@ -64,11 +83,17 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			// Дні групує Postgres — тягнути тисячі рядків у Node заради суми не варто.
 			// float8 замість bigint: інакше в JSON приїде BigInt, який SvelteKit не серіалізує.
 			prisma.$queryRaw<DayRow[]>`
-				SELECT to_char("createdAt" AT TIME ZONE 'Europe/Kyiv', 'YYYY-MM-DD') AS day,
-				       SUM("total")::float8 AS revenue,
-				       COUNT(*)::float8 AS orders
-				FROM "Order"
-				WHERE "status" <> 'CANCELLED' AND "createdAt" >= ${start}
+				-- Штуки — підзапитом на кожне замовлення (LATERAL), щоб сума й кількість
+				-- замовлень не множились на число позицій.
+				SELECT to_char(o."createdAt" AT TIME ZONE 'Europe/Kyiv', 'YYYY-MM-DD') AS day,
+				       SUM(o."total")::float8 AS revenue,
+				       COUNT(*)::float8 AS orders,
+				       COALESCE(SUM(i.units), 0)::float8 AS units
+				FROM "Order" o
+				LEFT JOIN LATERAL (
+				  SELECT SUM("quantity") AS units FROM "OrderItem" WHERE "orderId" = o."id"
+				) i ON true
+				WHERE o."status" <> 'CANCELLED' AND o."createdAt" >= ${start}
 				GROUP BY 1
 			`,
 			// Позиція замовлення — знімок: беремо назву з неї, а не з Product,
@@ -115,7 +140,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const daily = Array.from({ length: days }, (_, index) => {
 		const key = shiftKey(startKey, index);
 		const row = byDay.get(key);
-		return { key, revenue: row?.revenue ?? 0, orders: row?.orders ?? 0 };
+		return { key, revenue: row?.revenue ?? 0, orders: row?.orders ?? 0, units: row?.units ?? 0 };
 	});
 
 	// Рік — це 365 стовпчиків шириною в піксель; тижні читаються.
@@ -127,7 +152,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			key: chunk[0].key,
 			endKey: chunk[chunk.length - 1].key,
 			revenue: chunk.reduce((sum, day) => sum + day.revenue, 0),
-			orders: chunk.reduce((sum, day) => sum + day.orders, 0)
+			orders: chunk.reduce((sum, day) => sum + day.orders, 0),
+			units: chunk.reduce((sum, day) => sum + day.units, 0)
 		});
 	}
 
@@ -155,4 +181,4 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		})),
 		lowStock
 	};
-};
+}

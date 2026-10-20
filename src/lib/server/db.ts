@@ -1,8 +1,10 @@
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaClient } from './prisma-client/client';
 
-// Vite перезапускає модулі на кожну зміну, тому в дев-режимі тримаємо один
-// клієнт на процес, інакше пул з'єднань Neon швидко закінчується.
+// Один клієнт на процес. У розробці Vite перезапускає модулі на кожну зміну,
+// на Vercel інстанс функції обслуговує запит за запитом — і там, і там новий
+// клієнт на кожне звернення відкривав би новий пул зʼєднань Neon, доки ті не
+// закінчаться. Тому клієнт живе в globalThis, а не в змінній модуля.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function client(): PrismaClient {
@@ -14,9 +16,8 @@ function client(): PrismaClient {
 		throw new Error('DATABASE_URL is not set — додайте connection string з Neon у .env');
 	}
 
-	const instance = new PrismaClient({ adapter: new PrismaNeon({ connectionString }) });
-	if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = instance;
-	return instance;
+	globalForPrisma.prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString }) });
+	return globalForPrisma.prisma;
 }
 
 /**

@@ -1,8 +1,10 @@
 import { error } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
+import { cached } from '$lib/server/cache';
 import { atLeast } from '$lib/permissions';
 import { dayKey, midnight, shiftKey } from '$lib/server/kyiv';
-import { resolveRange } from '$lib/server/traffic-range';
+import { resolveRange, type Range } from '$lib/server/traffic-range';
 import {
 	DEVICE_LABELS,
 	funnel,
@@ -14,6 +16,8 @@ import {
 } from '$lib/traffic';
 import { WHEEL_GROUP_LABELS } from '$lib/wheel';
 import type { PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 /**
  * Відвідуваність сайту.
@@ -104,16 +108,34 @@ function wheelReport(rows: WheelRow[]) {
 	};
 }
 
-export const load: PageServerLoad = async ({ url, locals }) => {
-	if (!atLeast(locals.user?.role, 'ADMIN')) {
-		error(403, 'Розділ доступний лише адміністраторам');
-	}
-
+const loadView = async ({ url }: LoadEvent) => {
 	const today = dayKey(new Date());
 	const range = resolveRange(url.searchParams, today);
 	const sourceParam = url.searchParams.get('source');
 	const source: SourceKey | null = isSource(sourceParam) ? sourceParam : null;
 
+	// Ключ — із уже розібраних параметрів: сміття в адресі не плодить записів.
+	// Звіт важкий, а нові події пишуться постійно — тож дві хвилини; кнопка
+	// «Оновити» скидає кеш одразу (traffic/refresh).
+	return cached(
+		`traffic:${range.from}:${range.to}:${source ?? 'all'}:${today}`,
+		{ tags: ['traffic'], ttl: 120 },
+		() => report(range, source, today)
+	);
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	if (!atLeast(event.locals.user?.role, 'MANAGER')) {
+		error(403, 'Розділ доступний менеджерам і адміністраторам');
+	}
+	return streamOnFirstLoad(event, loadView(event));
+};
+
+async function report(range: Range, source: SourceKey | null, today: string) {
 	// Межі — київські півночі, переведені в UTC: саме так лежить createdAt.
 	const start = midnight(range.from);
 	const end = midnight(shiftKey(range.to, 1));
@@ -345,4 +367,4 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			share: rate(row.visitors, deviceTotal) ?? 0
 		}))
 	};
-};
+}

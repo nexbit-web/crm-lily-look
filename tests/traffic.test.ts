@@ -66,7 +66,8 @@ type Loaded = {
 	} | null;
 };
 
-function open(search = '', role: string | null = 'MANAGER') {
+// Розділ лише для адміністраторів.
+function open(search = '', role: string | null = 'ADMIN') {
 	return (load as unknown as (e: unknown) => Promise<Loaded>)({
 		url: new URL(`http://localhost/traffic${search}`),
 		locals: { user: role ? { id: 'u1', role } : null }
@@ -177,9 +178,9 @@ describe('період', () => {
 		expect(at('range=30')).toMatchObject({ from: '2026-08-30', to: today, days: 30 });
 	});
 
-	it('без параметра — 7 днів', () => {
-		expect(at('')).toMatchObject({ key: '7', days: 7 });
-		expect(at('range=DROP')).toMatchObject({ key: '7' });
+	it('без параметра — сьогодні', () => {
+		expect(at('')).toMatchObject({ key: 'today', from: today, to: today, days: 1 });
+		expect(at('range=DROP')).toMatchObject({ key: 'today' });
 	});
 
 	it('власний період приймає коректні дати', () => {
@@ -193,7 +194,7 @@ describe('період', () => {
 		expect(at('range=custom&from=2026-09-20&to=2027-01-01')).toMatchObject({ to: today });
 	});
 
-	it('неіснуючі дати, перевернутий і надто довгий період — назад до 7 днів', () => {
+	it('неіснуючі дати, перевернутий і надто довгий період — назад до сьогодні', () => {
 		for (const query of [
 			'range=custom&from=2026-02-31&to=2026-03-05',
 			'range=custom&from=2026-09-10&to=2026-09-01',
@@ -201,7 +202,7 @@ describe('період', () => {
 			'range=custom&from=вчора&to=сьогодні',
 			'range=custom'
 		]) {
-			expect(at(query)).toMatchObject({ key: '7' });
+			expect(at(query)).toMatchObject({ key: 'today' });
 		}
 	});
 });
@@ -229,7 +230,9 @@ describe('сторінка відвідуваності', () => {
 			expect(db.orderCount).not.toHaveBeenCalled();
 		});
 
-		it('адміністратора пускає', async () => {
+		it('менеджера й адміністратора пускає', async () => {
+			answers();
+			expect((await open('', 'MANAGER')).state).toBe('ready');
 			answers();
 			expect((await open('', 'ADMIN')).state).toBe('ready');
 		});

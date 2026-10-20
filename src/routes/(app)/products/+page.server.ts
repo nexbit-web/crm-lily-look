@@ -1,6 +1,10 @@
 import { prisma } from '$lib/server/db';
+import { streamOnFirstLoad } from '$lib/server/stream';
+import { cached } from '$lib/server/cache';
 import { Prisma } from '$lib/server/prisma-client/client';
 import type { PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 const PER_PAGE = 15;
 
@@ -17,7 +21,7 @@ function isSortKey(value: string): value is SortKey {
 	return value in SORTS;
 }
 
-export const load: PageServerLoad = async ({ url }) => {
+const loadView = async ({ url }: LoadEvent) => {
 	const query = (url.searchParams.get('q') ?? '').trim();
 	const category = (url.searchParams.get('category') ?? '').trim();
 	const sortParam = url.searchParams.get('sort') ?? 'created';
@@ -26,6 +30,24 @@ export const load: PageServerLoad = async ({ url }) => {
 	const rawPage = Number(url.searchParams.get('page') ?? '1');
 	const requestedPage = Math.max(1, Number.isFinite(rawPage) ? Math.trunc(rawPage) : 1);
 
+	// Залишки змінює й сайт (продажі), тож пʼять хвилин. Усе, що міняє CRM —
+	// товари, категорії, знижки, — скидає кеш одразу (hooks.server.ts).
+	return cached(
+		`products:list:${sort}:${category}:${requestedPage}:${query}`,
+		{ tags: ['products'], ttl: 300 },
+		() => list(query, category, sort, requestedPage)
+	);
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	return streamOnFirstLoad(event, loadView(event));
+};
+
+async function list(query: string, category: string, sort: SortKey, requestedPage: number) {
 	// Пошук по назві, адресі та SKU варіанта — те, чим менеджер шукає товар.
 	const search: Prisma.ProductWhereInput = query
 		? {
@@ -129,4 +151,4 @@ export const load: PageServerLoad = async ({ url }) => {
 			variantCount: product.variants.length
 		}))
 	};
-};
+}

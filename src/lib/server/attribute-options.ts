@@ -1,4 +1,5 @@
 import { prisma } from './db';
+import { cached } from './cache';
 import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
 
 /** Скільки варіантів значення показувати в підказці одної характеристики. */
@@ -11,7 +12,15 @@ const MAX_VALUES = 20;
  * характеристикою з чотирма значеннями, а не розповзтись на «посадку»,
  * «Посадку» й «Fit». Нічого не нормалізує в базі — лише читає.
  */
-export async function attributeOptions(): Promise<AttributeOption[]> {
+export function attributeOptions(): Promise<AttributeOption[]> {
+	return cached(
+		'products:attribute-options',
+		{ tags: ['products'], ttl: 86_400 },
+		readAttributeOptions
+	);
+}
+
+async function readAttributeOptions(): Promise<AttributeOption[]> {
 	const rows = await prisma.productAttribute.groupBy({
 		by: ['name', 'value'],
 		_count: { _all: true }

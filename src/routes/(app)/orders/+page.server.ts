@@ -1,20 +1,31 @@
 import { fail } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
 import { Prisma } from '$lib/server/prisma-client/client';
-import { isOrderStatus, isPaymentStatus, ORDER_STATUSES, type OrderStatusKey } from '$lib/orders';
+import {
+	isOrderStatus,
+	isPaymentStatus,
+	ORDER_STATUSES,
+	paymentForStatus,
+	type OrderStatusKey,
+	type PaymentStatusKey
+} from '$lib/orders';
+import { cached, invalidate } from '$lib/server/cache';
+import { trigger } from '$lib/server/pusher';
+import { ORDER_UPDATED, ORDERS_CHANNEL, ORDERS_DEPENDENCY, type OrderUpdated } from '$lib/realtime';
 import type { Actions, PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 const PER_PAGE = 20;
 
-export const load: PageServerLoad = async ({ url }) => {
-	const query = (url.searchParams.get('q') ?? '').trim();
-	const statusParam = url.searchParams.get('status') ?? '';
-	// Лише замовлення, де спрацював приз колеса фортуни.
-	const prizeOnly = url.searchParams.get('prize') === '1';
-	const status: OrderStatusKey | null = isOrderStatus(statusParam) ? statusParam : null;
-	const rawPage = Number(url.searchParams.get('page') ?? '1');
-	const requestedPage = Math.max(1, Number.isFinite(rawPage) ? Math.trunc(rawPage) : 1);
-
+/** Одна сторінка списку з лічильниками — те, що лежить у кеші. */
+async function readOrders(
+	query: string,
+	status: OrderStatusKey | null,
+	prizeOnly: boolean,
+	requestedPage: number
+) {
 	// Номер, імʼя й телефон — те, чим менеджер шукає замовлення, коли клієнт
 	// телефонує. Телефон без insensitive: у ньому немає літер.
 	const search: Prisma.OrderWhereInput = query
@@ -101,18 +112,39 @@ export const load: PageServerLoad = async ({ url }) => {
 	const page = Math.min(requestedPage, pageCount);
 	const orders = page === requestedPage ? firstTry : await fetchPage(page);
 
-	return {
-		orders,
-		counts,
-		prizeCount,
-		total,
-		page,
-		pageCount,
-		perPage: PER_PAGE,
-		query,
-		status,
-		prizeOnly
-	};
+	return { orders, counts, prizeCount, total, page, pageCount };
+}
+
+const loadView = async ({ url, depends }: LoadEvent) => {
+	// Нове замовлення чи зміна з іншої вкладки (Pusher) — список перечитується.
+	depends(ORDERS_DEPENDENCY);
+	const query = (url.searchParams.get('q') ?? '').trim();
+	const statusParam = url.searchParams.get('status') ?? '';
+	// Лише замовлення, де спрацював приз колеса фортуни.
+	const prizeOnly = url.searchParams.get('prize') === '1';
+	const status: OrderStatusKey | null = isOrderStatus(statusParam) ? statusParam : null;
+	const rawPage = Number(url.searchParams.get('page') ?? '1');
+	const requestedPage = Math.max(1, Number.isFinite(rawPage) ? Math.trunc(rawPage) : 1);
+
+	// Найвідвідуваніша сторінка CRM — з кешу. Півхвилини, як і лічильник у
+	// сайдбарі: замовлення й оплату міняють сайт і бот, а про це CRM дізнається
+	// лише з вебхука. Зміни в самому CRM і вебхук нового замовлення кеш
+	// скидають одразу.
+	const list = await cached(
+		`orders:list:${status ?? 'all'}:${prizeOnly ? 'prize' : 'any'}:${requestedPage}:${query}`,
+		{ tags: ['orders'], ttl: 30 },
+		() => readOrders(query, status, prizeOnly, requestedPage)
+	);
+
+	return { ...list, perPage: PER_PAGE, query, status, prizeOnly };
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	return streamOnFirstLoad(event, loadView(event));
 };
 
 export const actions: Actions = {
@@ -124,8 +156,22 @@ export const actions: Actions = {
 
 		if (!isOrderStatus(value)) return fail(400, { message: 'Невідомий статус' });
 
+		const current = await prisma.order.findUnique({
+			where: { id },
+			select: { paymentStatus: true }
+		});
+		if (!current) return fail(404, { message: 'Замовлення не знайдено' });
+
+		// Оплата підлаштовується під статус: доставлене — оплачене, скасоване —
+		// не оплачене (або повернене, якщо гроші вже були). Одним записом.
+		const payment = paymentForStatus(value, current.paymentStatus as PaymentStatusKey);
+
 		try {
-			await prisma.order.update({ where: { id }, data: { status: value }, select: { id: true } });
+			await prisma.order.update({
+				where: { id },
+				data: { status: value, ...(payment ? { paymentStatus: payment } : {}) },
+				select: { id: true }
+			});
 		} catch (err) {
 			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
 				return fail(404, { message: 'Замовлення не знайдено' });
@@ -133,7 +179,8 @@ export const actions: Actions = {
 			throw err;
 		}
 
-		return { saved: true };
+		await announce({ id, status: value });
+		return { saved: true, payment };
 	},
 
 	payment: async ({ request }) => {
@@ -156,6 +203,17 @@ export const actions: Actions = {
 			throw err;
 		}
 
+		await announce({ id });
 		return { saved: true };
 	}
 };
+
+/**
+ * Інші відкриті вкладки CRM (колега на сусідньому компʼютері) оновлять
+ * список без перезавантаження. Кеш скидаємо ще до події — інакше вкладка
+ * встигла б перечитати старе (хук скидає кеш лише після відповіді).
+ */
+async function announce(event: OrderUpdated) {
+	await invalidate('orders');
+	await trigger(ORDERS_CHANNEL, ORDER_UPDATED, event);
+}

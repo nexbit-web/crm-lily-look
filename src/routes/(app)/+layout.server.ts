@@ -1,5 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { cached } from '$lib/server/cache';
+import { accentCookie, parseAccent } from '$lib/accent';
+import { realtimeConfig } from '$lib/server/pusher';
+import { ORDERS_DEPENDENCY } from '$lib/realtime';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -16,16 +20,28 @@ import type { LayoutServerLoad } from './$types';
  * зміниться.
  *
  * Лічильник оновлюється після кожної дії з формою (use:enhance за
- * замовчуванням робить invalidateAll) і на повному перезавантаженні сторінки.
+ * замовчуванням робить invalidateAll), на повному перезавантаженні сторінки
+ * і щойно Pusher повідомить про нове замовлення.
  */
-export const load: LayoutServerLoad = async ({ locals }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, depends }) => {
 	if (!locals.user) redirect(303, '/login');
 
-	const newOrders = await prisma.order.count({ where: { status: 'NEW' } });
+	// Прийшло нове замовлення (Pusher) — браузер перечитає лише лічильник і
+	// список замовлень, а не всі дані сторінки (форма товару не скинеться).
+	depends(ORDERS_DEPENDENCY);
+
+	// Нові замовлення приходять із сайту, а про це CRM не дізнається — тож лише
+	// півхвилини. Зміну статусу в самому CRM кеш бачить одразу (hooks.server.ts).
+	const newOrders = await cached('orders:new-count', { tags: ['orders'], ttl: 30 }, () =>
+		prisma.order.count({ where: { status: 'NEW' } })
+	);
 
 	// Сайдбару потрібна лише роль, сторінці налаштувань — імʼя й пошта.
 	// Решту полів сесії (токени, дати) у браузер не віддаємо.
 	const { id, name, email, role } = locals.user;
 
-	return { user: { id, name, email, role }, newOrders };
+	// Колір теми — свій у кожного співробітника, з cookie браузера.
+	const accent = parseAccent(cookies.get(accentCookie(id)));
+
+	return { user: { id, name, email, role }, newOrders, accent, realtime: realtimeConfig() };
 };

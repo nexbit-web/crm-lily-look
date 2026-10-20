@@ -1,16 +1,26 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import toast from 'svelte-hot-french-toast';
-	import { ImagePlus, ArrowUp, ArrowDown, Plus, X, CircleAlert, RefreshCw } from '@lucide/svelte';
+	import { untrack, type Component } from 'svelte';
+	import toast from '$lib/toast.svelte';
+	import {
+		CircleAlert,
+		FileText,
+		GripVertical,
+		ImagePlus,
+		Images,
+		Link2,
+		ListChecks,
+		Plus,
+		Ruler,
+		Trash2,
+		X,
+		ZoomIn
+	} from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import SuggestInput from '$lib/components/suggest-input.svelte';
-	import PhotoViewer from '$lib/components/photo-viewer.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import PhotoViewer, { warmPreview } from '$lib/components/photo-viewer.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { cloudinaryThumb } from '$lib/cloudinary-url';
 	import {
@@ -23,6 +33,7 @@
 	import { skuFor } from '$lib/sku';
 	import { DEFAULT_ATTRIBUTE_NAMES, type AttributeOption } from '$lib/product-attributes';
 	import { bySize } from '$lib/sizes';
+	import { pill } from '$lib/table';
 
 	/** Фото товару. `color` — до якого кольору воно належить; '' — спільне. */
 	export type ProductFormImage = { url: string; alt: string; color: string };
@@ -213,6 +224,24 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 	/** Індекс фото, відкритого на весь екран; null — перегляд закритий. */
 	let viewing = $state<number | null>(null);
+	/** Над плиткою «Додати фото» тягнуть файли — підсвічуємо, куди кинути. */
+	let dragging = $state(false);
+	/** Фото, яке зараз тягнуть мишею, і плитка, над якою воно висить. */
+	let dragFrom = $state<number | null>(null);
+	let dragOver = $state<number | null>(null);
+
+	// Вигляд у стилі CRM: блоки-картки, компактні поля 32 px, дрібні підписи.
+	const card = 'rounded-[12px] bg-block p-4';
+	const fieldLabel = 'text-[12px] font-medium text-muted-foreground';
+	const control = 'h-8 text-[13px] md:text-[13px]';
+	const iconButton =
+		'flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-destructive disabled:pointer-events-none disabled:opacity-30';
+	const dropzone =
+		'flex flex-col items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed text-[12px] transition-colors disabled:cursor-wait';
+	const dropzoneIdle =
+		'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground';
+	const dropzoneActive = 'border-primary bg-primary/5 text-foreground';
+	const SIZE_FIELDS = ['Розмір', 'UA', 'Груди, см', 'Рукав, см', 'Довжина, см'];
 
 	const LETTER_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 	/** Український (він же європейський) жіночий розмірний ряд. */
@@ -342,20 +371,31 @@
 		}
 	}
 
-	function moveImage(index: number, delta: number) {
-		const target = index + delta;
-		if (target < 0 || target >= images.length) return;
-		[images[index], images[target]] = [images[target], images[index]];
+	/**
+	 * Переносить фото мишею: те, що тягнули, стає на місце того, на яке
+	 * кинули, решта зсувається. Лише в стані форми — у базу порядок піде
+	 * разом із «Зберегти».
+	 */
+	function movePhoto(from: number, to: number) {
+		if (from === to || from < 0 || to < 0 || from >= images.length || to >= images.length) return;
+		const [moved] = images.splice(from, 1);
+		images.splice(to, 0, moved);
+	}
+
+	/** Файли з компʼютера над плиткою «Додати». Перенесення фото — не файли. */
+	function onFileDragOver(event: DragEvent) {
+		if (dragFrom !== null) return;
+		event.preventDefault();
+		dragging = true;
+	}
+
+	function onFileDrop(event: DragEvent) {
+		event.preventDefault();
+		dragging = false;
+		if (dragFrom === null) uploadFiles(event.dataTransfer?.files ?? null);
 	}
 
 	/** Додає одразу весь ряд, пропускаючи розміри, що вже є. */
-	/** Скидає ручні артикули — далі сервер збере їх за правилом. */
-	function resetSkus() {
-		for (const group of sizes) {
-			for (const color of group.colors) color.sku = '';
-		}
-	}
-
 	function addSizeRange(list: string[]) {
 		const known = new Set(sizes.map((group) => group.size.trim().toUpperCase()));
 		// Набір кольорів беремо з першої заповненої групи — так швидше набивати.
@@ -428,222 +468,536 @@
 <input type="hidden" name="measurements" value={JSON.stringify(measurementsPayload)} />
 <input type="hidden" name="attributes" value={JSON.stringify(attributes)} />
 
-<div class="space-y-8">
-	<!-- Дві колонки: ліворуч те, що описує товар, праворуч — фото.
-	     Розміри лишаються на всю ширину: шість полів у половині екрана
-	     перетворюються на нечитабельну сітку. -->
-	<div class="grid gap-x-10 gap-y-8 lg:grid-cols-2 lg:items-start">
-		<div class="space-y-8">
-			<section class="space-y-4">
-				<div class="space-y-1">
-					<h2 class="text-[15px] font-semibold tracking-tight">Основне</h2>
+{#snippet heading(Icon: Component, title: string, hint?: string)}
+	<div class="mb-3 flex items-center gap-2">
+		<Icon size={15} class="shrink-0 text-muted-foreground" />
+		<h2 class="text-[14px] font-semibold tracking-tight">{title}</h2>
+		{#if hint}
+			<span class="truncate text-[12px] text-muted-foreground">{hint}</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet error(message: string | undefined)}
+	{#if message}
+		<p class="flex items-center gap-1.5 text-xs text-destructive">
+			<CircleAlert size={13} class="shrink-0" />
+			{message}
+		</p>
+	{/if}
+{/snippet}
+
+<!-- Дві колонки, як картка задачі в ClickUp: ліворуч усе, що описує товар
+     (основне, розміри, характеристики), праворуч — видимість і фото, вони
+     прилипають і лишаються на очах, поки гортаєш розміри. -->
+<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] lg:items-start">
+	<div class="min-w-0 space-y-3">
+		<!-- Основне -->
+		<section class={card}>
+			{@render heading(FileText, 'Основне')}
+			<div class="space-y-3">
+				<div class="space-y-1.5">
+					<Label for="pf-name" class={fieldLabel}>Назва</Label>
+					<Input
+						id="pf-name"
+						name="name"
+						bind:value={name}
+						placeholder="Сукня вечірня «Лілея»"
+						class={control}
+						aria-invalid={fieldErrors.name ? 'true' : undefined}
+					/>
+					<!-- Без native required: інакше браузер показав би власну підказку
+					     й наші повідомлення з поясненням не зʼявились би взагалі.
+					     Адресу на сайті складаємо з назви, тож редагувати нема чого. -->
+					<p class="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+						<Link2 size={12} class="shrink-0" />
+						/catalog/{slugPreview || '…'}
+					</p>
+					{@render error(fieldErrors.name)}
 				</div>
-				<div class="space-y-5">
-					<div class="space-y-2">
-						<Label for="pf-name">Назва</Label>
-						<Input
-							id="pf-name"
-							name="name"
-							bind:value={name}
-							placeholder="Сукня вечірня «Лілея»"
-							class="h-10"
-							aria-invalid={fieldErrors.name ? 'true' : undefined}
-						/>
-						<!-- Без native required: інакше браузер показав би власну підказку
-						     й наші повідомлення з поясненням не зʼявились би взагалі.
-						     Усі перевірки живуть на сервері, в одному місці. -->
-						<!-- Адресу на сайті складаємо з назви, тож редагувати нема чого:
-				     показуємо результат, а на сервер він їде прихованим полем. -->
-						<p class="truncate text-xs text-muted-foreground">/catalog/{slugPreview || '…'}</p>
-						{#if fieldErrors.name}
-							<p class="flex items-center gap-1.5 text-xs text-destructive">
-								<CircleAlert size={13} class="shrink-0" />
-								{fieldErrors.name}
-							</p>
-						{/if}
+
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div class="space-y-1.5">
+						<Label for="pf-category" class={fieldLabel}>Категорія</Label>
+						<Select.Root type="single" name="categoryId" bind:value={categoryId}>
+							<Select.Trigger
+								id="pf-category"
+								class="w-full text-[13px]"
+								aria-invalid={fieldErrors.categoryId ? 'true' : undefined}
+							>
+								{categoryLabel ?? 'Виберіть категорію'}
+							</Select.Trigger>
+							<!-- Не більше шести рядків на екран: категорій уже десятки,
+							     далі список гортається. -->
+							<Select.Content class="max-h-50">
+								{#each categories as category (category.id)}
+									<Select.Item value={category.id} label={category.label}>
+										{category.label}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						{@render error(fieldErrors.categoryId)}
 					</div>
 
-					<div class="space-y-4">
-						<div class="space-y-2">
-							<Label for="pf-category">Категорія</Label>
-							<Select.Root type="single" name="categoryId" bind:value={categoryId}>
-								<Select.Trigger
-									id="pf-category"
-									class="h-10 w-full"
-									aria-invalid={fieldErrors.categoryId ? 'true' : undefined}
-								>
-									{categoryLabel ?? 'Виберіть категорію'}
-								</Select.Trigger>
-								<!-- Не більше шести рядків на екран: категорій уже десятки,
-								     далі список гортається. -->
-								<Select.Content class="max-h-50">
-									{#each categories as category (category.id)}
-										<Select.Item value={category.id} label={category.label}>
-											{category.label}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-							{#if fieldErrors.categoryId}
-								<p class="flex items-center gap-1.5 text-xs text-destructive">
-									<CircleAlert size={13} class="shrink-0" />
-									{fieldErrors.categoryId}
-								</p>
-							{/if}
-						</div>
-
-						<div class="space-y-2">
-							<Label for="pf-price">
-								Ціна, ₴ <span class="font-normal text-muted-foreground">до знижок</span>
-							</Label>
+					<div class="space-y-1.5">
+						<Label for="pf-price" class={fieldLabel}>
+							Ціна <span class="font-normal opacity-70">до знижок</span>
+						</Label>
+						<div class="relative">
 							<Input
 								id="pf-price"
 								name="price"
 								bind:value={price}
 								inputmode="decimal"
 								placeholder="1299.00"
-								class="h-10"
+								class="{control} pr-7 tabular-nums"
 								aria-invalid={fieldErrors.price ? 'true' : undefined}
 							/>
-							{#if fieldErrors.price}
-								<p class="flex items-center gap-1.5 text-xs text-destructive">
-									<CircleAlert size={13} class="shrink-0" />
-									{fieldErrors.price}
-								</p>
-							{/if}
-						</div>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="pf-description">Опис</Label>
-						<Textarea
-							id="pf-description"
-							name="description"
-							bind:value={description}
-							rows={5}
-							placeholder="Тканина, посадка, догляд…"
-							aria-invalid={fieldErrors.description ? 'true' : undefined}
-						/>
-						{#if fieldErrors.description}
-							<p class="flex items-center gap-1.5 text-xs text-destructive">
-								<CircleAlert size={13} class="shrink-0" />
-								{fieldErrors.description}
-							</p>
-						{/if}
-					</div>
-
-					<div class="flex items-center gap-2 border-t border-foreground/10 pt-5">
-						<Checkbox id="pf-active" name="isActive" value="on" bind:checked={isActive} />
-						<Label for="pf-active" class="font-normal">Показувати на сайті</Label>
-					</div>
-				</div>
-			</section>
-		</div>
-
-		<div class="space-y-8">
-			<section class="space-y-4">
-				<div class="space-y-1">
-					<h2 class="text-[15px] font-semibold tracking-tight">Характеристики</h2>
-					<p class="text-xs text-muted-foreground">
-						Таблиця під описом товару на сайті. Порожні рядки не зберігаються.
-					</p>
-				</div>
-				<div class="space-y-2">
-					<div
-						class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] gap-3 px-1 text-xs text-muted-foreground"
-					>
-						<span>Назва</span>
-						<span>Значення</span>
-						<span></span>
-					</div>
-
-					{#each attributes as attribute, index (index)}
-						<div class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_2rem] items-center gap-3">
-							<Input
-								bind:value={attribute.name}
-								placeholder="Склад"
-								class="h-10 font-medium"
-								list="pf-attr-names"
-							/>
-							<!-- Список значень залежить від назви в сусідньому полі: для
-				     «Посадки» це три варіанти, для «Складу» — шпаргалка. -->
-							<Input
-								bind:value={attribute.value}
-								placeholder="95% віскоза, 5% еластан"
-								class="h-10"
-								list={attributeListId(attribute.name)}
-							/>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								class="size-8 text-muted-foreground hover:text-destructive"
-								aria-label="Видалити характеристику"
-								onclick={() => attributes.splice(index, 1)}
+							<span
+								class="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[13px] text-muted-foreground"
 							>
-								<X size={15} />
-							</Button>
+								₴
+							</span>
 						</div>
-					{/each}
+						{@render error(fieldErrors.price)}
+					</div>
+				</div>
 
-					{#if fieldErrors.attributes}
-						<p class="flex items-center gap-1.5 text-xs text-destructive">
-							<CircleAlert size={13} class="shrink-0" />
-							{fieldErrors.attributes}
-						</p>
-					{/if}
+				<div class="space-y-1.5">
+					<Label for="pf-description" class={fieldLabel}>Опис</Label>
+					<Textarea
+						id="pf-description"
+						name="description"
+						bind:value={description}
+						rows={5}
+						placeholder="Тканина, посадка, догляд…"
+						class="text-[13px]"
+						aria-invalid={fieldErrors.description ? 'true' : undefined}
+					/>
+					{@render error(fieldErrors.description)}
+				</div>
+			</div>
+		</section>
 
-					<Button
+		<!-- Характеристики -->
+		<section class={card}>
+			{@render heading(ListChecks, 'Характеристики', 'Таблиця під описом на сайті')}
+			<div class="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)_1.75rem] items-center gap-2">
+				<span class={fieldLabel}>Назва</span>
+				<span class={fieldLabel}>Значення</span>
+				<span></span>
+
+				{#each attributes as attribute, index (index)}
+					<Input
+						bind:value={attribute.name}
+						placeholder="Склад"
+						class="{control} font-medium"
+						list="pf-attr-names"
+					/>
+					<!-- Список значень залежить від назви в сусідньому полі: для
+					     «Посадки» це три варіанти, для «Складу» — шпаргалка. -->
+					<Input
+						bind:value={attribute.value}
+						placeholder="95% віскоза, 5% еластан"
+						class={control}
+						list={attributeListId(attribute.name)}
+					/>
+					<button
 						type="button"
-						variant="outline"
-						size="sm"
-						class="mt-2"
+						class={iconButton}
+						aria-label="Видалити характеристику"
+						onclick={() => attributes.splice(index, 1)}
+					>
+						<X size={14} />
+					</button>
+				{/each}
+			</div>
+
+			<div class="mt-2.5 space-y-2">
+				{@render error(fieldErrors.attributes)}
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						class={pill}
 						onclick={() => attributes.push({ name: '', value: '' })}
 					>
-						<Plus size={14} />
+						<Plus size={12} />
 						Характеристика
-					</Button>
+					</button>
+					<span class="text-[11px] text-muted-foreground">Порожні рядки не зберігаються</span>
+				</div>
+			</div>
 
-					<datalist id="pf-attr-names">
-						{#each attributeOptions as option (option.name)}
-							<option value={option.name}></option>
+			<datalist id="pf-attr-names">
+				{#each attributeOptions as option (option.name)}
+					<option value={option.name}></option>
+				{/each}
+			</datalist>
+			{#each attributeOptions as option, index (option.name)}
+				{#if option.values.length > 0}
+					<datalist id="pf-attr-{index}">
+						{#each option.values as value (value)}
+							<option {value}></option>
 						{/each}
 					</datalist>
-					{#each attributeOptions as option, index (option.name)}
-						{#if option.values.length > 0}
-							<datalist id="pf-attr-{index}">
-								{#each option.values as value (value)}
-									<option {value}></option>
+				{/if}
+			{/each}
+		</section>
+
+		<!-- Розміри: кожен розмір — окрема картка із замірами й кольорами -->
+		<section class={card}>
+			<div class="mb-3 flex flex-wrap items-center gap-2">
+				<Ruler size={15} class="shrink-0 text-muted-foreground" />
+				<h2 class="text-[14px] font-semibold tracking-tight">Розміри</h2>
+				<span class="text-[12px] text-muted-foreground tabular-nums">{sizes.length}</span>
+			</div>
+
+			<div class="space-y-2">
+				{#each sizes as group, groupIndex (groupIndex)}
+					<div class="overflow-hidden rounded-[10px] border border-border bg-card">
+						<!-- Заміри розміру -->
+						<div class="p-2.5">
+							<div
+								class="grid grid-cols-[1.1fr_0.9fr_0.9fr_0.9fr_0.9fr_1.75rem] items-center gap-2"
+							>
+								<!-- Підписи — лише над першим розміром: далі їх тримає та сама сітка. -->
+								{#if groupIndex === 0}
+									{#each SIZE_FIELDS as label (label)}
+										<span class={fieldLabel}>{label}</span>
+									{/each}
+									<span></span>
+								{/if}
+
+								<!-- Поле лишається текстовим: свій розмір («S/M») теж має право
+								     існувати. Меню — лише швидкий вибір уже відомих. -->
+								<SuggestInput
+									bind:value={group.size}
+									options={sizeMenu}
+									label="Вибрати розмір"
+									placeholder="M"
+									inputClass="font-semibold"
+									oncommit={() => syncUa(group)}
+								/>
+								<Input bind:value={group.ua} placeholder="46" class={control} />
+								<Input
+									bind:value={group.chest}
+									inputmode="numeric"
+									placeholder="92"
+									class={control}
+								/>
+								<Input
+									bind:value={group.sleeve}
+									inputmode="numeric"
+									placeholder="60"
+									class={control}
+								/>
+								<Input
+									bind:value={group.length}
+									inputmode="numeric"
+									placeholder="92"
+									class={control}
+								/>
+								<button
+									type="button"
+									class={iconButton}
+									aria-label="Видалити розмір"
+									disabled={sizes.length === 1}
+									onclick={() => sizes.splice(groupIndex, 1)}
+								>
+									<Trash2 size={14} />
+								</button>
+							</div>
+						</div>
+
+						<!-- Кольори цього розміру: у кожного свій артикул і залишок -->
+						<div class="space-y-2 border-t border-border bg-foreground/2 p-2.5">
+							<div class="grid grid-cols-[minmax(0,1fr)_11rem_5.5rem_1.75rem] items-center gap-2">
+								<span class={fieldLabel}>Колір</span>
+								<span class={fieldLabel}>Артикул</span>
+								<span class={fieldLabel}>Кількість</span>
+								<span></span>
+
+								{#each group.colors as color, colorIndex (color.id ?? colorIndex)}
+									<SuggestInput
+										bind:value={color.color}
+										options={colorMenu}
+										label="Вибрати колір"
+										placeholder="Чорний"
+										inputClass="pl-9"
+										oncommit={() => syncColorHex(color)}
+									>
+										{#snippet leading()}
+											<!-- Крапля кольору всередині поля: окремої колонки HEX
+											     немає, для відомих назв він підставляється з бази. -->
+											<input
+												type="color"
+												value={/^#[0-9a-f]{6}$/i.test(color.colorHex) ? color.colorHex : '#000000'}
+												oninput={(event) => (color.colorHex = event.currentTarget.value)}
+												aria-label="Колір"
+												class="absolute top-1/2 left-1.5 z-10 size-5.5 -translate-y-1/2 cursor-pointer"
+											/>
+										{/snippet}
+									</SuggestInput>
+									<!-- Порожнє поле = артикул збереться за правилом і піде за
+									     назвою, розміром і кольором. Вписаний руками лишається як є. -->
+									<Input
+										bind:value={color.sku}
+										placeholder={skuFor(slugPreview, group.size, color.color) || 'авто'}
+										spellcheck={false}
+										class="{control} font-mono text-[12px]"
+									/>
+									<Input
+										bind:value={color.stock}
+										inputmode="numeric"
+										placeholder="0"
+										class="{control} tabular-nums"
+									/>
+									<button
+										type="button"
+										class={iconButton}
+										aria-label="Видалити колір"
+										disabled={group.colors.length === 1}
+										onclick={() => group.colors.splice(colorIndex, 1)}
+									>
+										<X size={14} />
+									</button>
 								{/each}
-							</datalist>
-						{/if}
+							</div>
+
+							<button type="button" class={pill} onclick={() => group.colors.push(emptyColor())}>
+								<Plus size={12} />
+								Колір
+							</button>
+						</div>
+					</div>
+				{/each}
+
+				{@render error(fieldErrors.variants)}
+				{@render error(fieldErrors.measurements)}
+
+				<div class="flex flex-wrap items-center gap-1.5 pt-1">
+					<button type="button" class={pill} onclick={() => sizes.push(emptySize())}>
+						<Plus size={12} />
+						Розмір
+					</button>
+					<button type="button" class={pill} onclick={() => addSizeRange(LETTER_SIZES)}>
+						XS–XXL
+					</button>
+					<button type="button" class={pill} onclick={() => addSizeRange(UA_SIZES)}> 38–54 </button>
+					{#each sizeOptions as size (size)}
+						<button
+							type="button"
+							class="{pill} text-muted-foreground"
+							onclick={() => addSizeRange([size])}
+						>
+							{size}
+						</button>
 					{/each}
 				</div>
-			</section>
-		</div>
+			</div>
+		</section>
 	</div>
 
-	<section class="space-y-4">
-		<div class="space-y-1">
-			<h2 class="text-[15px] font-semibold tracking-tight">Фото</h2>
-		</div>
-		<!-- Ширина як у лівої колонки сітки вище (gap-x-10 = 2.5rem): і кнопка,
-		     і список фото, щоб блок не розтягувався на всю сторінку. -->
-		<div class="space-y-4 lg:max-w-[calc(50%-1.25rem)]">
-			<Button
-				type="button"
-				class="h-11 w-full rounded-xl text-sm"
-				onclick={() => fileInput?.click()}
-				disabled={uploading > 0}
-			>
-				{#if uploading > 0}
-					<Spinner />
-					Завантаження ({uploading})
-				{:else}
-					<ImagePlus size={18} />
-					Додати фото
-				{/if}
-			</Button>
+	<div class="min-w-0 space-y-3 lg:sticky lg:top-14">
+		<!-- Видимість: один перемикач, зелений як в iOS. Під ним звичайний
+		     чекбокс, тож на сервер, як і раніше, їде isActive=on. -->
+		<section class={card}>
+			<label for="pf-active" class="flex cursor-pointer items-center gap-3">
+				<span class="min-w-0 flex-1 text-[14px] font-semibold tracking-tight">
+					Показувати на сайті
+				</span>
+				<input
+					id="pf-active"
+					type="checkbox"
+					name="isActive"
+					value="on"
+					bind:checked={isActive}
+					class="peer sr-only"
+				/>
+				<span
+					aria-hidden="true"
+					class="relative h-6 w-10 shrink-0 rounded-full bg-foreground/15 transition-colors duration-200 peer-checked:bg-[#34c759] peer-focus-visible:ring-2 peer-focus-visible:ring-ring/50 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-white after:shadow-[0_2px_4px_rgba(0,0,0,0.2)] after:transition-transform after:duration-200 peer-checked:after:translate-x-4 dark:peer-checked:bg-[#30d158]"
+				></span>
+			</label>
+		</section>
+
+		<!-- Фото: сітка мініатюр, перше — головне. Порядок міняється
+		     перетягуванням мишею; зберігається разом з товаром. -->
+		<section class={card}>
+			{@render heading(Images, 'Фото', images.length > 0 ? String(images.length) : undefined)}
+
+			{#if images.length === 0}
+				<!-- Фото ще немає — одна велика кнопка: клік або перетягнути файли. -->
+				<button
+					type="button"
+					class="{dropzone} h-32 w-full {dragging ? dropzoneActive : dropzoneIdle}"
+					onclick={() => fileInput?.click()}
+					disabled={uploading > 0}
+					ondragover={onFileDragOver}
+					ondragleave={() => (dragging = false)}
+					ondrop={onFileDrop}
+				>
+					{#if uploading > 0}
+						<Spinner />
+						<span class="tabular-nums">Завантаження ({uploading})</span>
+					{:else}
+						<ImagePlus size={22} />
+						<span class="text-[13px] font-medium text-foreground">Додати фото</span>
+						<span class="text-[12px]">або перетягніть сюди файли</span>
+					{/if}
+				</button>
+			{:else}
+				<div class="grid grid-cols-3 gap-2">
+					{#each images as image, index (image.url)}
+						<div class="min-w-0 space-y-1.5">
+							<!-- Клік по фото — відкрити на весь екран. Перенести — лише
+							     за ручку в лівому верхньому куті: дві дії не плутаються. -->
+							<div
+								data-photo
+								role="group"
+								aria-label="Фото {index + 1}{index === 0 ? ', головне' : ''}"
+								class="group relative aspect-square overflow-hidden rounded-[10px] bg-foreground/5 transition-[opacity,box-shadow] {dragFrom ===
+								index
+									? 'opacity-40'
+									: ''} {dragOver === index && dragFrom !== null && dragFrom !== index
+									? 'ring-2 ring-primary'
+									: ''}"
+								onpointerenter={() => warmPreview(image.url)}
+								ondragover={(event) => {
+									if (dragFrom === null) return;
+									event.preventDefault();
+									dragOver = index;
+								}}
+								ondrop={(event) => {
+									event.preventDefault();
+									if (dragFrom !== null) movePhoto(dragFrom, index);
+									dragFrom = null;
+									dragOver = null;
+								}}
+							>
+								<button
+									type="button"
+									class="peer block size-full cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+									aria-label="Переглянути фото на весь екран"
+									onclick={() => (viewing = index)}
+								>
+									<img
+										src={cloudinaryThumb(image.url, 240)}
+										alt={name || 'Фото товару'}
+										draggable="false"
+										class="pointer-events-none size-full object-cover select-none"
+									/>
+								</button>
+
+								<!-- Під курсором — лупа по центру: видно, що клік відкриває фото. -->
+								<span
+									class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity peer-hover:opacity-100 peer-focus-visible:opacity-100"
+								>
+									<span
+										class="flex size-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm"
+									>
+										<ZoomIn size={15} />
+									</span>
+								</span>
+
+								<!-- Ручка: тягнеш за неї — переносиш фото. Картинка-привид
+								     при цьому — уся плитка, а не сама іконка. -->
+								<span
+									draggable="true"
+									role="button"
+									tabindex="-1"
+									aria-label="Перетягнути фото"
+									title="Перетягніть, щоб змінити порядок"
+									class="absolute top-1.5 left-1.5 flex size-6 cursor-grab items-center justify-center rounded-[6px] bg-black/60 text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 active:cursor-grabbing [@media(hover:none)]:opacity-100"
+									ondragstart={(event) => {
+										dragFrom = index;
+										const tile = event.currentTarget.closest('[data-photo]');
+										if (event.dataTransfer) {
+											event.dataTransfer.effectAllowed = 'move';
+											event.dataTransfer.setData('text/plain', String(index));
+											if (tile instanceof HTMLElement) {
+												event.dataTransfer.setDragImage(tile, 16, 16);
+											}
+										}
+									}}
+									ondragend={() => {
+										dragFrom = null;
+										dragOver = null;
+									}}
+								>
+									<GripVertical size={14} />
+								</span>
+
+								{#if index === 0}
+									<span
+										class="pointer-events-none absolute bottom-1.5 left-1.5 rounded-[5px] bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white uppercase"
+									>
+										Головне
+									</span>
+								{/if}
+
+								<!-- Видалити — під курсором; на дотик кнопка видима завжди. -->
+								<button
+									type="button"
+									class="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 backdrop-blur-sm transition group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-destructive [@media(hover:none)]:opacity-100"
+									aria-label="Видалити фото"
+									onclick={() => removeImage(index)}
+								>
+									<X size={12} />
+								</button>
+							</div>
+
+							<!-- Колір фото: спільні сайт показує завжди, решту — тільки
+							     коли вибрано саме цей колір. -->
+							<Select.Root type="single" bind:value={image.color}>
+								<Select.Trigger size="sm" class="w-full px-2 text-[12px]">
+									<span class="truncate">{image.color || 'Спільне'}</span>
+								</Select.Trigger>
+								<Select.Content class="max-h-50">
+									<Select.Item value="" label="Спільне">Спільне</Select.Item>
+									{#each photoColors as color (color)}
+										<Select.Item value={color} label={color}>{color}</Select.Item>
+									{/each}
+									<!-- Колір, прибраний із розмірів, лишається в списку: інакше
+									     він зник би із селекта, а в базі й далі стояв. -->
+									{#if image.color && !photoColors.includes(image.color)}
+										<Select.Item value={image.color} label={image.color}>
+											{image.color} — немає серед розмірів
+										</Select.Item>
+									{/if}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					{/each}
+
+					<!-- Плитка «додати»: клік відкриває вибір файлів, сюди ж можна
+					     перетягнути фото з компʼютера. -->
+					<button
+						type="button"
+						class="{dropzone} aspect-square {dragging ? dropzoneActive : dropzoneIdle}"
+						onclick={() => fileInput?.click()}
+						disabled={uploading > 0}
+						ondragover={onFileDragOver}
+						ondragleave={() => (dragging = false)}
+						ondrop={onFileDrop}
+					>
+						{#if uploading > 0}
+							<Spinner />
+							<span class="tabular-nums">{uploading}…</span>
+						{:else}
+							<ImagePlus size={18} />
+							Додати
+						{/if}
+					</button>
+				</div>
+
+				<p class="mt-2 text-[11px] text-muted-foreground">
+					Клік — відкрити фото. Щоб змінити порядок, тягніть за ручку в лівому куті. Порядок
+					збережеться разом з товаром.
+				</p>
+			{/if}
+
 			<input
 				bind:this={fileInput}
 				type="file"
@@ -653,284 +1007,20 @@
 				onchange={(event) => uploadFiles(event.currentTarget.files)}
 			/>
 
-			{#if fieldErrors.images}
-				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleAlert size={13} class="shrink-0" />
-					{fieldErrors.images}
-				</p>
-			{/if}
-
-			{#if images.length > 0}
-				<!-- Опис фото (alt) сервер бере з назви товару, тому руками його
-		     ніхто не набирає. -->
-				<div class="space-y-2">
-					{#each images as image, index (image.url)}
-						<div class="flex items-center gap-3 rounded-xl border border-border p-2">
-							<button
-								type="button"
-								class="shrink-0 cursor-zoom-in rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary"
-								aria-label="Переглянути фото на весь екран"
-								onclick={() => (viewing = index)}
-							>
-								<img
-									src={cloudinaryThumb(image.url, 96)}
-									alt={name || 'Фото товару'}
-									class="size-12 rounded-lg object-cover"
-								/>
-							</button>
-							{#if index === 0}
-								<Badge variant="secondary">Головне</Badge>
-							{:else}
-								<span class="text-xs text-muted-foreground">#{index + 1}</span>
-							{/if}
-
-							<!-- Колір фото: спільні сайт показує завжди, решту — тільки
-					     коли вибрано саме цей колір. -->
-							<Select.Root type="single" bind:value={image.color}>
-								<Select.Trigger class="ml-auto h-9 w-40">
-									{image.color || 'Спільне'}
-								</Select.Trigger>
-								<Select.Content class="max-h-50">
-									<Select.Item value="" label="Спільне">Спільне</Select.Item>
-									{#each photoColors as color (color)}
-										<Select.Item value={color} label={color}>{color}</Select.Item>
-									{/each}
-									<!-- Колір, прибраний із розмірів, лишається в списку: інакше
-							     він зник би із селекта, а в базі й далі стояв. -->
-									{#if image.color && !photoColors.includes(image.color)}
-										<Select.Item value={image.color} label={image.color}>
-											{image.color} — немає серед розмірів
-										</Select.Item>
-									{/if}
-								</Select.Content>
-							</Select.Root>
-
-							<div class="flex gap-1">
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									class="size-8"
-									aria-label="Перемістити вище"
-									disabled={index === 0}
-									onclick={() => moveImage(index, -1)}
-								>
-									<ArrowUp size={14} />
-								</Button>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									class="size-8"
-									aria-label="Перемістити нижче"
-									disabled={index === images.length - 1}
-									onclick={() => moveImage(index, 1)}
-								>
-									<ArrowDown size={14} />
-								</Button>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									class="size-8 text-muted-foreground hover:text-destructive"
-									aria-label="Видалити фото"
-									onclick={() => removeImage(index)}
-								>
-									<X size={14} />
-								</Button>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			{#if colorsWithoutPhoto.length > 0}
-				<p class="text-xs text-muted-foreground">
-					На сайті залишаться без фото: {colorsWithoutPhoto.join(', ')}. Додайте фото цього кольору
-					або поставте якомусь фото «Спільне».
-				</p>
-			{/if}
-		</div>
-	</section>
-
-	<section class="space-y-4">
-		<div class="space-y-1">
-			<h2 class="text-[15px] font-semibold tracking-tight">Розміри</h2>
-		</div>
-		<div class="space-y-4">
-			<!-- Підписи колонок — лише над першим блоком: далі їх тримає та сама
-			     сітка, а повторювати шапку в кожній картці зайве. -->
-			{#each sizes as group, groupIndex (groupIndex)}
-				<div class="space-y-5 rounded-xl border border-border p-4 sm:p-5">
-					<div class="space-y-2">
-						{#if groupIndex === 0}
-							<div
-								class="grid grid-cols-[1.1fr_0.9fr_0.9fr_0.9fr_0.9fr_2rem] gap-3 px-1 text-xs text-muted-foreground"
-							>
-								<span>Розмір</span>
-								<span>UA</span>
-								<span>Груди, см</span>
-								<span>Рукав, см</span>
-								<span>Довжина, см</span>
-								<span></span>
-							</div>
-						{/if}
-
-						<div class="grid grid-cols-[1.1fr_0.9fr_0.9fr_0.9fr_0.9fr_2rem] items-center gap-3">
-							<!-- Поле лишається текстовим: свій розмір («S/M») теж має право
-							     існувати. Меню — лише швидкий вибір уже відомих. -->
-							<SuggestInput
-								bind:value={group.size}
-								options={sizeMenu}
-								label="Вибрати розмір"
-								placeholder="M"
-								inputClass="font-medium"
-								oncommit={() => syncUa(group)}
-							/>
-							<Input bind:value={group.ua} placeholder="46" class="h-10" />
-							<Input bind:value={group.chest} inputmode="numeric" placeholder="92" class="h-10" />
-							<Input bind:value={group.sleeve} inputmode="numeric" placeholder="60" class="h-10" />
-							<Input bind:value={group.length} inputmode="numeric" placeholder="92" class="h-10" />
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								class="size-8 text-muted-foreground hover:text-destructive"
-								aria-label="Видалити розмір"
-								disabled={sizes.length === 1}
-								onclick={() => sizes.splice(groupIndex, 1)}
-							>
-								<X size={15} />
-							</Button>
-						</div>
-					</div>
-
-					<div class="space-y-2 border-t border-foreground/10 pt-5">
-						{#if groupIndex === 0}
-							<div
-								class="grid grid-cols-[minmax(0,1fr)_11rem_6rem_2rem] gap-3 px-1 text-xs text-muted-foreground"
-							>
-								<span>Колір</span>
-								<span>Артикул</span>
-								<span>Кількість</span>
-								<span></span>
-							</div>
-						{/if}
-
-						{#each group.colors as color, colorIndex (color.id ?? colorIndex)}
-							<div class="grid grid-cols-[minmax(0,1fr)_11rem_6rem_2rem] items-center gap-3">
-								<SuggestInput
-									bind:value={color.color}
-									options={colorMenu}
-									label="Вибрати колір"
-									placeholder="Чорний"
-									inputClass="pl-11"
-									oncommit={() => syncColorHex(color)}
-								>
-									{#snippet leading()}
-										<!-- Крапля кольору всередині поля: окремої колонки HEX
-										     немає, для відомих назв він підставляється з бази. -->
-										<input
-											type="color"
-											value={/^#[0-9a-f]{6}$/i.test(color.colorHex) ? color.colorHex : '#000000'}
-											oninput={(event) => (color.colorHex = event.currentTarget.value)}
-											aria-label="Колір"
-											class="absolute top-1/2 left-1.5 z-10 size-7 -translate-y-1/2 cursor-pointer"
-										/>
-									{/snippet}
-								</SuggestInput>
-								<!-- Порожнє поле = артикул збереться за правилом і піде за
-								     назвою, розміром і кольором. Вписаний руками лишається як є. -->
-								<Input
-									bind:value={color.sku}
-									placeholder={skuFor(slugPreview, group.size, color.color) || 'авто'}
-									spellcheck={false}
-									class="h-10 font-mono text-xs"
-								/>
-								<Input bind:value={color.stock} inputmode="numeric" placeholder="0" class="h-10" />
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									class="size-8 text-muted-foreground hover:text-destructive"
-									aria-label="Видалити колір"
-									disabled={group.colors.length === 1}
-									onclick={() => group.colors.splice(colorIndex, 1)}
-								>
-									<X size={15} />
-								</Button>
-							</div>
-						{/each}
-
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							class="-ml-2 h-8 px-2 text-muted-foreground"
-							onclick={() => group.colors.push(emptyColor())}
-						>
-							<Plus size={14} />
-							Колір
-						</Button>
-					</div>
-				</div>
-			{/each}
-
-			{#if fieldErrors.variants}
-				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleAlert size={13} class="shrink-0" />
-					{fieldErrors.variants}
-				</p>
-			{/if}
-			{#if fieldErrors.measurements}
-				<p class="flex items-center gap-1.5 text-xs text-destructive">
-					<CircleAlert size={13} class="shrink-0" />
-					{fieldErrors.measurements}
-				</p>
-			{/if}
-
-			<div class="flex flex-wrap items-center gap-2">
-				<Button type="button" variant="outline" size="sm" onclick={() => sizes.push(emptySize())}>
-					<Plus size={14} />
-					Розмір
-				</Button>
-				<Button
-					type="button"
-					variant="secondary"
-					size="sm"
-					onclick={() => addSizeRange(LETTER_SIZES)}
-				>
-					XS–XXL
-				</Button>
-				<Button type="button" variant="secondary" size="sm" onclick={() => addSizeRange(UA_SIZES)}>
-					38–54
-				</Button>
-				{#each sizeOptions as size (size)}
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						class="h-8 px-2 text-muted-foreground"
-						onclick={() => addSizeRange([size])}
-					>
-						{size}
-					</Button>
-				{/each}
-
-				<!-- Очищає ручні артикули: далі їх збере сервер за правилом. -->
-				<Button
-					type="button"
-					variant="ghost"
-					size="sm"
-					class="ml-auto h-8 px-2 text-muted-foreground"
-					onclick={resetSkus}
-				>
-					<RefreshCw size={14} />
-					Перегенерувати артикули
-				</Button>
+			<div class="mt-2.5 space-y-1.5 empty:hidden">
+				{@render error(fieldErrors.images)}
+				{#if colorsWithoutPhoto.length > 0}
+					<p class="flex gap-1.5 text-[12px] text-muted-foreground">
+						<CircleAlert size={13} class="mt-px shrink-0 text-amber-500" />
+						<span>
+							Без фото на сайті: {colorsWithoutPhoto.join(', ')}. Додайте фото цього кольору або
+							поставте якомусь фото «Спільне».
+						</span>
+					</p>
+				{/if}
 			</div>
-		</div>
-	</section>
+		</section>
+	</div>
 </div>
 
 <!-- Перегляд фото живе поза сіткою форми: він накриває весь екран. -->

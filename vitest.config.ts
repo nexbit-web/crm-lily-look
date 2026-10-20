@@ -82,8 +82,10 @@ export default defineConfig({
 		alias: {
 			$lib: fileURLToPath(new URL('./src/lib', import.meta.url)),
 			'$app/environment': stub('app-environment'),
+			'$app/forms': stub('app-forms'),
 			'$app/navigation': stub('app-navigation'),
-			'$app/state': stub('app-state')
+			'$app/state': stub('app-state'),
+			'$app/server': stub('app-server')
 		}
 	},
 	test: {

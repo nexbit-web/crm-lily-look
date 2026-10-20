@@ -21,6 +21,23 @@ export function isPaymentStatus(value: string): value is PaymentStatusKey {
 	return (PAYMENT_STATUSES as readonly string[]).includes(value);
 }
 
+/**
+ * Оплата, яка логічно випливає з нового статусу, або null — лишити як є.
+ *
+ * Доставлене — гроші вже отримані (післяплата чи передоплата), тож «Оплачено».
+ * Скасоване — «Не оплачено»; а якщо гроші вже приходили, їх треба повернути,
+ * тож «Повернено». Решта статусів оплату не чіпає.
+ */
+export function paymentForStatus(
+	status: OrderStatusKey,
+	current: PaymentStatusKey
+): PaymentStatusKey | null {
+	let next: PaymentStatusKey | null = null;
+	if (status === 'DELIVERED') next = 'PAID';
+	if (status === 'CANCELLED') next = current === 'UNPAID' ? 'UNPAID' : 'REFUNDED';
+	return next === current ? null : next;
+}
+
 export const STATUS_LABELS: Record<OrderStatusKey, string> = {
 	NEW: 'Нове',
 	CONFIRMED: 'Підтверджене',
@@ -31,11 +48,20 @@ export const STATUS_LABELS: Record<OrderStatusKey, string> = {
 
 /** Колір крапки в списку: статус має читатись, не відволікаючи. */
 export const STATUS_DOTS: Record<OrderStatusKey, string> = {
-	NEW: 'bg-ring',
+	NEW: 'bg-sky-500',
 	CONFIRMED: 'bg-amber-500',
 	SHIPPED: 'bg-indigo-500',
 	DELIVERED: 'bg-emerald-500',
-	CANCELLED: 'bg-muted-foreground/40'
+	CANCELLED: 'bg-red-500'
+};
+
+/** Плашка статусу в таблиці, як у ClickUp: суцільна заливка, білий текст. */
+export const STATUS_PILLS: Record<OrderStatusKey, string> = {
+	NEW: 'bg-sky-500 text-white',
+	CONFIRMED: 'bg-amber-500 text-white',
+	SHIPPED: 'bg-indigo-500 text-white',
+	DELIVERED: 'bg-emerald-500 text-white',
+	CANCELLED: 'bg-red-500 text-white'
 };
 
 export const PAYMENT_LABELS: Record<PaymentStatusKey, string> = {

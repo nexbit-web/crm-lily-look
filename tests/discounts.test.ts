@@ -25,6 +25,9 @@ vi.mock('$lib/server/db', () => ({
 
 vi.mock('$lib/server/categories', () => ({ categoryOptions: vi.fn(async () => []) }));
 
+/** Знижки ведуть менеджери й адміністратори. */
+const ADMIN = { user: { id: 'u1', role: 'ADMIN' } };
+
 type Result = { status?: number; data?: { message: string } } | { saved: true };
 
 /** Свіжий модуль на кожен тест: кеш «колонка вже дробова» не перетікає. */
@@ -43,7 +46,7 @@ async function save(value: string, id = ''): Promise<Result> {
 	form.set('scope', 'ALL');
 	form.set('isActive', 'on');
 	const request = new Request('http://localhost/discounts?/save', { method: 'POST', body: form });
-	return (actions.save as unknown as (e: unknown) => Promise<Result>)({ request });
+	return (actions.save as unknown as (e: unknown) => Promise<Result>)({ request, locals: ADMIN });
 }
 
 /** Тип колонки в базі: 0 знаків після коми — ще integer, 2 — вже numeric(5,2). */
@@ -132,7 +135,10 @@ describe('сторінка знижок', () => {
 				method: 'POST',
 				body: form
 			});
-			return (actions.save as unknown as (e: unknown) => Promise<Result>)({ request });
+			return (actions.save as unknown as (e: unknown) => Promise<Result>)({
+				request,
+				locals: ADMIN
+			});
 		};
 
 		await run('33.6');
@@ -166,9 +172,84 @@ describe('сторінка знижок', () => {
 		]);
 
 		const { load } = await page();
-		const data = (await (load as unknown as () => Promise<{ discounts: { percent: unknown }[] }>)())
-			.discounts;
+		const data = (
+			await (load as unknown as (e: unknown) => Promise<{ discounts: { percent: unknown }[] }>)({
+				locals: ADMIN
+			})
+		).discounts;
 
 		expect(data[0].percent).toBe(33.6);
+	});
+});
+
+describe('доступ до знижок', () => {
+	beforeEach(() => db.findMany.mockReset().mockResolvedValue([]));
+
+	const open = async (role: string | null) => {
+		const { load } = await page();
+		return (load as unknown as (e: unknown) => Promise<unknown>)({
+			locals: role ? { user: { id: 'u1', role } } : {}
+		});
+	};
+
+	it('менеджера й адміністратора пускає', async () => {
+		await expect(open('MANAGER')).resolves.toMatchObject({ discounts: [] });
+		await expect(open('ADMIN')).resolves.toMatchObject({ discounts: [] });
+	});
+
+	it('оператора й гостя — 403', async () => {
+		await expect(open('OPERATOR')).rejects.toMatchObject({ status: 403 });
+		await expect(open(null)).rejects.toMatchObject({ status: 403 });
+	});
+});
+
+describe('перемикач знижки в списку', () => {
+	beforeEach(() => {
+		db.findUnique.mockReset();
+		db.update.mockReset().mockResolvedValue({});
+	});
+
+	const toggle = async (id: string, locals: object = ADMIN) => {
+		const { actions } = await page();
+		const body = new FormData();
+		body.set('id', id);
+		const request = new Request('http://localhost/discounts?/toggle', { method: 'POST', body });
+		return (actions.toggle as unknown as (e: unknown) => Promise<unknown>)({ request, locals });
+	};
+
+	it('вмикає вимкнену й вимикає увімкнену — за станом у базі, а не з браузера', async () => {
+		db.findUnique.mockResolvedValueOnce({ isActive: false });
+		expect(await toggle('d1')).toEqual({ toggled: true });
+		expect(db.update).toHaveBeenLastCalledWith({ where: { id: 'd1' }, data: { isActive: true } });
+
+		db.findUnique.mockResolvedValueOnce({ isActive: true });
+		await toggle('d1');
+		expect(db.update).toHaveBeenLastCalledWith({ where: { id: 'd1' }, data: { isActive: false } });
+	});
+
+	it('«Скасувати» в тості — той самий перемикач ще раз, тож стан повертається', async () => {
+		let active = true;
+		db.findUnique.mockImplementation(async () => ({ isActive: active }));
+		db.update.mockImplementation(async ({ data }: { data: { isActive: boolean } }) => {
+			active = data.isActive;
+		});
+
+		await toggle('d1');
+		await toggle('d1');
+		expect(active).toBe(true);
+	});
+
+	it('знижки вже немає — 404, нічого не пишемо', async () => {
+		db.findUnique.mockResolvedValue(null);
+
+		expect(await toggle('gone')).toMatchObject({ status: 404 });
+		expect(db.update).not.toHaveBeenCalled();
+	});
+
+	it('оператор перемкнути не може', async () => {
+		await expect(toggle('d1', { user: { id: 'o', role: 'OPERATOR' } })).rejects.toMatchObject({
+			status: 403
+		});
+		expect(db.update).not.toHaveBeenCalled();
 	});
 });

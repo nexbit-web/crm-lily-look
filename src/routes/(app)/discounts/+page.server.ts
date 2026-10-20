@@ -1,14 +1,19 @@
 import { error, fail } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
+import { cached } from '$lib/server/cache';
 import { categoryOptions } from '$lib/server/categories';
 import { parseUahToKop } from '$lib/money';
 import { isFractional, parsePercent } from '$lib/percent';
 import { atLeast } from '$lib/permissions';
 import type { Actions, PageServerLoad } from './$types';
 
-function requireAdmin(locals: App.Locals) {
-	if (!atLeast(locals.user?.role, 'ADMIN')) {
-		error(403, 'Розділ доступний лише адміністраторам');
+type LoadEvent = Parameters<PageServerLoad>[0];
+
+/** Знижки ведуть менеджери й адміністратори; операторам розділ закритий. */
+function requireManager(locals: App.Locals) {
+	if (!atLeast(locals.user?.role, 'MANAGER')) {
+		error(403, 'Розділ доступний менеджерам і адміністраторам');
 	}
 }
 
@@ -40,44 +45,63 @@ function isScope(value: string): value is Scope {
 	return (SCOPES as readonly string[]).includes(value);
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
-	requireAdmin(locals);
+const loadView = async ({ locals }: LoadEvent) => {
+	requireManager(locals);
 
+	// Знижки й список товарів міняє лише CRM, і кожна зміна скидає кеш — тож
+	// хоч на добу. Окремі записи: правка товару не перечитує знижки й навпаки.
 	const [discounts, categories, products] = await Promise.all([
-		prisma.discount.findMany({
-			// Увімкнені — зверху: саме вони зараз впливають на ціни.
-			orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
-			select: {
-				id: true,
-				name: true,
-				scope: true,
-				percent: true,
-				amount: true,
-				isActive: true,
-				categories: { select: { categoryId: true } },
-				products: { select: { productId: true } }
-			}
-		}),
+		cached('discounts:list', { tags: ['discounts'], ttl: 86_400 }, readDiscounts),
 		categoryOptions(),
-		prisma.product.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } })
+		cached('products:names', { tags: ['products'], ttl: 86_400 }, () =>
+			prisma.product.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } })
+		)
 	]);
 
 	return {
 		categories,
 		products: products.map((product) => ({ id: product.id, label: product.name })),
-		discounts: discounts.map((discount) => ({
-			id: discount.id,
-			name: discount.name,
-			scope: discount.scope,
-			// Decimal у браузер не передати — віддаємо звичайне число (33.6).
-			percent: discount.percent === null ? null : Number(discount.percent),
-			amount: discount.amount,
-			isActive: discount.isActive,
-			categoryIds: discount.categories.map((row) => row.categoryId),
-			productIds: discount.products.map((row) => row.productId)
-		}))
+		discounts
 	};
 };
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	requireManager(event.locals);
+	return streamOnFirstLoad(event, loadView(event));
+};
+
+async function readDiscounts() {
+	const discounts = await prisma.discount.findMany({
+		// Увімкнені — зверху: саме вони зараз впливають на ціни.
+		orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
+		select: {
+			id: true,
+			name: true,
+			scope: true,
+			percent: true,
+			amount: true,
+			isActive: true,
+			categories: { select: { categoryId: true } },
+			products: { select: { productId: true } }
+		}
+	});
+
+	return discounts.map((discount) => ({
+		id: discount.id,
+		name: discount.name,
+		scope: discount.scope,
+		// Decimal у браузер (і в кеш) не передати — віддаємо звичайне число (33.6).
+		percent: discount.percent === null ? null : Number(discount.percent),
+		amount: discount.amount,
+		isActive: discount.isActive,
+		categoryIds: discount.categories.map((row) => row.categoryId),
+		productIds: discount.products.map((row) => row.productId)
+	}));
+}
 
 function parseJson(raw: FormDataEntryValue | null): string[] {
 	if (typeof raw !== 'string' || raw.trim() === '') return [];
@@ -92,7 +116,7 @@ function parseJson(raw: FormDataEntryValue | null): string[] {
 export const actions: Actions = {
 	/** Одна дія на створення й редагування: різниця лише в наявності id. */
 	save: async ({ request, locals }) => {
-		requireAdmin(locals);
+		requireManager(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 		const name = String(form.get('name') ?? '').trim();
@@ -193,7 +217,7 @@ export const actions: Actions = {
 
 	/** Перемикач прямо в списку: увімкнути чи вимкнути знижку одним кліком. */
 	toggle: async ({ request, locals }) => {
-		requireAdmin(locals);
+		requireManager(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 
@@ -208,7 +232,7 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ request, locals }) => {
-		requireAdmin(locals);
+		requireManager(locals);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '').trim();
 

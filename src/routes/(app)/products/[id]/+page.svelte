@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { applyAction, enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import toast from 'svelte-hot-french-toast';
-	import { ChevronLeft, Trash2 } from '@lucide/svelte';
+	import toast from '$lib/toast.svelte';
+	import { Boxes, Eye, EyeOff, Ruler, Tag, Trash2 } from '@lucide/svelte';
 	import ConfirmAlert, { alertActionClass } from '$lib/components/confirm-alert.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import ProductForm from '$lib/components/product-form.svelte';
 	import { formatUah } from '$lib/money';
+	import { badge } from '$lib/table';
+	import ProductBar from '../product-bar.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -36,103 +37,80 @@
 			minute: '2-digit'
 		})
 	);
+
+	const tile = 'rounded-[12px] bg-block px-3.5 py-3';
+	const tileLabel = 'flex items-center gap-1.5 text-[12px] text-muted-foreground';
 </script>
 
 <svelte:head><title>{product.name} — CRM LILY LOOK</title></svelte:head>
 
-<!-- Панель дій приклеєна до верху скролу й напівпрозора: назва товару та
-     «Зберегти» лишаються під рукою, скільки б не було розмірів.
-
-     -top-6 — це не запас, а компенсація: у <main> є p-6, і приклеєний блок
-     браузер тримає на 24 px нижче видимого краю. Без мінуса над панеллю під
-     час прокрутки прозирала б смужка сторінки. -->
-<div
-	class="sticky -top-6 z-30 -mx-6 -mt-6 mb-5 border-b border-border/70 bg-card/95 px-6 py-3 backdrop-blur-xl"
->
-	<div class="flex items-center gap-3">
-		<Button
-			href="/products"
-			variant="ghost"
-			size="icon-sm"
-			class="-ml-1.5 shrink-0 rounded-full"
-			aria-label="Назад до списку"
-		>
-			<ChevronLeft size={17} />
-		</Button>
-
-		<div class="min-w-0 flex-1">
-			<h1 class="truncate text-[15px] leading-tight font-semibold tracking-tight">
-				{product.name}
-			</h1>
-			<p class="truncate text-[11px] leading-tight text-muted-foreground">
-				/catalog/{product.slug}
-			</p>
-		</div>
-
-		<Button
-			variant="ghost"
-			size="icon-sm"
+<ProductBar title={product.name} subtitle="/catalog/{product.slug} · оновлено {updatedAt}">
+	{#snippet actions()}
+		<button
+			type="button"
 			aria-label="Видалити товар"
-			class="shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+			class="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
 			onclick={() => (confirmOpen = true)}
 		>
-			<Trash2 size={16} />
-		</Button>
-		<Button
+			<Trash2 size={15} />
+		</button>
+		<button
 			type="submit"
 			form="product-edit"
-			class="shrink-0 rounded-xl px-5"
+			class="flex h-7 items-center gap-1.5 rounded-[6px] bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
 			disabled={submitting || Boolean(productForm?.isUploading())}
 		>
-			{#if submitting}<Spinner />{/if}
+			{#if submitting}<Spinner class="size-3.5" />{/if}
 			Зберегти
-		</Button>
-	</div>
-</div>
+		</button>
+	{/snippet}
+</ProductBar>
 
-<div class="space-y-6 pb-12">
-	<!-- Зведення: те, що рахує база і чого у формі немає. Значення попереду,
-	     підпис під ним — цифру видно з відстані, читати нічого не треба. -->
-	<div class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-border/70 sm:grid-cols-4">
-		<div class="bg-card px-5 py-4">
-			<p class="truncate text-xl font-semibold tracking-tight tabular-nums">
-				{formatUah(hasDiscount ? product.finalPrice : product.priceKop)}
-			</p>
-			<p class="mt-1 truncate text-xs text-muted-foreground">
+<div class="space-y-3 pb-6">
+	<!-- Зведення: те, що рахує база і чого у формі немає. -->
+	<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+		<div class={tile}>
+			<p class={tileLabel}><Tag size={13} />{hasDiscount ? 'Ціна зі знижкою' : 'Ціна'}</p>
+			<p class="mt-1 flex items-baseline gap-1.5 truncate tabular-nums">
+				<span class="text-[17px] font-semibold tracking-tight">
+					{formatUah(hasDiscount ? product.finalPrice : product.priceKop)}
+				</span>
 				{#if hasDiscount}
-					<span class="line-through">{formatUah(product.priceKop)}</span> зі знижкою
-				{:else}
-					Ціна
+					<span class="text-xs text-muted-foreground line-through">
+						{formatUah(product.priceKop)}
+					</span>
 				{/if}
 			</p>
 		</div>
 
-		<div class="bg-card px-5 py-4">
+		<div class={tile}>
+			<p class={tileLabel}><Boxes size={13} />На складі</p>
 			<p
-				class="text-xl font-semibold tracking-tight tabular-nums {totalStock === 0
+				class="mt-1 text-[17px] font-semibold tracking-tight tabular-nums {totalStock === 0
 					? 'text-destructive'
 					: ''}"
 			>
-				{totalStock}
+				{totalStock} <span class="text-[13px] font-normal text-muted-foreground">шт</span>
 			</p>
-			<p class="mt-1 text-xs text-muted-foreground">На складі</p>
 		</div>
 
-		<div class="bg-card px-5 py-4">
-			<p class="text-xl font-semibold tracking-tight tabular-nums">{sizeCount}</p>
-			<p class="mt-1 text-xs text-muted-foreground">Розмірів</p>
+		<div class={tile}>
+			<p class={tileLabel}><Ruler size={13} />Розмірів</p>
+			<p class="mt-1 text-[17px] font-semibold tracking-tight tabular-nums">{sizeCount}</p>
 		</div>
 
-		<div class="bg-card px-5 py-4">
-			<p class="flex items-center gap-2 text-xl font-semibold tracking-tight">
-				<span
-					class="size-2 shrink-0 rounded-full {product.isActive
-						? 'bg-emerald-500'
-						: 'bg-muted-foreground/40'}"
-				></span>
-				{product.isActive ? 'На сайті' : 'Схований'}
+		<div class={tile}>
+			<p class={tileLabel}>
+				{#if product.isActive}<Eye size={13} />{:else}<EyeOff size={13} />{/if}
+				Статус
 			</p>
-			<p class="mt-1 truncate text-xs text-muted-foreground">Статус</p>
+			<p class="mt-1.5">
+				{#if product.isActive}
+					<span class="{badge} bg-emerald-500 text-white">На сайті</span>
+				{:else}
+					<span class="{badge} bg-foreground/10 text-muted-foreground">Приховано</span>
+				{/if}
+			</p>
 		</div>
 	</div>
 
@@ -156,7 +134,7 @@
 					// не мали б id і повторне збереження створило б їх удруге.
 					await invalidateAll();
 					formVersion += 1;
-					toast.success('Збережено');
+					toast.success('Товар збережено');
 				}
 			};
 		}}
@@ -183,8 +161,6 @@
 			/>
 		{/key}
 	</form>
-
-	<p class="text-center text-xs text-muted-foreground">Оновлено {updatedAt}</p>
 </div>
 
 <ConfirmAlert
@@ -201,7 +177,7 @@
 				return async ({ result }) => {
 					deleting = false;
 					confirmOpen = false;
-					if (result.type === 'redirect') toast.success('Товар видалено');
+					if (result.type === 'redirect') toast.message(`«${product.name}» видалено.`);
 					else if (result.type === 'error') {
 						toast.error(result.error?.message ?? 'Не вдалося видалити');
 					}

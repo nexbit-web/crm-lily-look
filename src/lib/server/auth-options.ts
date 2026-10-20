@@ -1,6 +1,7 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './db';
+import { SESSION_CACHE_SECONDS } from './sessions';
 
 /**
  * Налаштування better-auth без SvelteKit-специфічних плагінів.
@@ -28,7 +29,9 @@ export const authOptions = {
 	session: {
 		expiresIn: 60 * 60 * 24 * 7, // тиждень
 		updateAge: 60 * 60 * 24, // подовжувати сесію не частіше разу на добу
-		cookieCache: { enabled: true, maxAge: 60 * 5 }
+		// Сесія з підписаної cookie, без запиту до бази. Зміну ролі чи видалення
+		// співробітника видно одразу — див. $lib/server/sessions.
+		cookieCache: { enabled: true, maxAge: SESSION_CACHE_SECONDS }
 	},
 
 	user: {

@@ -1,21 +1,18 @@
 <!-- src/lib/components/sidebar/Sidebar.svelte -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { Component } from 'svelte';
-	import {
-		LayoutDashboard,
-		Eye,
-		Package,
-		Shirt,
-		FolderTree,
-		BadgePercent,
-		ShieldUser,
-		Settings,
-		Bot
-	} from '@lucide/svelte';
+	import { isActive, navFor, type NavItem } from '$lib/nav';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import { atLeast, type Role } from '$lib/permissions';
+	import NavIcon from './nav-icon.svelte';
 
+	/**
+	 * Бічна колонка як у ClickUp: вузька, іконки з короткими підписами, повна
+	 * назва розділу — у підказці збоку. Колір — з теми (налаштування).
+	 *
+	 * Вибраний розділ — біла плитка, а іконка на ній «випалена» кольором
+	 * сайдбару. Угорі — продажі й сайт, унизу — службове самої CRM (команда,
+	 * бот). Налаштування тут немає: вони в меню профілю в шапці.
+	 */
 	let {
 		user,
 		newOrders = 0
@@ -24,89 +21,76 @@
 		newOrders?: number;
 	} = $props();
 
-	// min — мінімальна роль, щоб бачити пункт. Без min → видно всім staff.
-	type NavItem = { href: string; label: string; icon: Component; min?: Role };
-
-	const nav: NavItem[] = [
-		{
-			href: '/statistics',
-			label: 'Статистика',
-			icon: LayoutDashboard,
-			min: 'ADMIN'
-		},
-		{ href: '/traffic', label: 'Відвідуваність', icon: Eye, min: 'ADMIN' },
-		{ href: '/orders', label: 'Замовлення', icon: Package },
-		{ href: '/products', label: 'Товари', icon: Shirt },
-		{ href: '/categories', label: 'Категорії', icon: FolderTree },
-		{ href: '/discounts', label: 'Знижки', icon: BadgePercent, min: 'ADMIN' },
-		{ href: '/admins', label: 'Адмін', icon: ShieldUser, min: 'ADMIN' },
-		{ href: '/telegram', label: 'Telegram-бот', icon: Bot, min: 'ADMIN' }
-	];
-	// Видимі пункти за роллю користувача
-	const visibleNav = $derived(nav.filter((i) => atLeast(user.role, i.min ?? 'OPERATOR')));
-
-	// Стоїть окремо, притиснутий до низу: там же тема і вихід з акаунта.
-	const settingsItem: NavItem = { href: '/settings', label: 'Налаштування', icon: Settings };
-
+	const items = $derived(navFor(user.role));
+	const main = $derived(items.filter((item) => !item.system));
+	const system = $derived(items.filter((item) => item.system));
 	const pathname = $derived(page.url.pathname);
-
-	function isActive(href: string): boolean {
-		if (href === '/') return pathname === '/';
-		return pathname === href || pathname.startsWith(href + '/');
-	}
 </script>
 
 {#snippet navLink(item: NavItem)}
-	{@const active = isActive(item.href)}
+	{@const active = isActive(pathname, item.href)}
 	{@const badge = item.href === '/orders' ? newOrders : 0}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
-				<!-- Вибраний пункт — мʼяка заливка плюс синя іконка, як вибраний
-				     рядок у бічних панелях macOS. Ніякої підсвітки: у списку з
-				     шести іконок достатньо кольору, щоб побачити, де ти є. -->
 				<a
 					{...props}
 					href={item.href}
 					aria-current={active ? 'page' : undefined}
 					aria-label={badge > 0 ? `${item.label} — ${badge} нових` : item.label}
-					class="relative flex h-10 w-full items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40 {active
-						? 'bg-white/10 text-primary'
-						: 'text-white/55 hover:bg-white/6 hover:text-white/90'}"
+					class="group flex w-full flex-col items-center gap-1 rounded-[10px] py-1 outline-none focus-visible:ring-2 focus-visible:ring-white/40"
 				>
-					<item.icon size={20} strokeWidth={active ? 2.1 : 1.8} aria-hidden="true" />
-					{#if badge > 0}
-						<span
-							class="absolute top-1.5 right-1.5 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white ring-2 ring-[#0f0f12] dark:ring-card"
-							aria-hidden="true"
-						>
-							{badge > 9 ? '9+' : badge}
-						</span>
-					{/if}
+					<span
+						class="relative flex size-8 items-center justify-center rounded-[10px] transition-colors {active
+							? 'bg-white text-rail'
+							: 'text-white group-hover:bg-white/10'}"
+					>
+						<NavIcon name={item.glyph} size={22} />
+
+						{#if badge > 0}
+							<span
+								class="absolute -top-1 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white ring-2 ring-rail"
+								aria-hidden="true"
+							>
+								{badge > 9 ? '9+' : badge}
+							</span>
+						{/if}
+					</span>
+					<!-- Підпис короткий і дрібний — лише орієнтир; повна назва в підказці. -->
+					<span
+						class="max-w-full truncate text-[10px] leading-[13px] tracking-[-0.02em] text-white {active
+							? 'font-semibold'
+							: ''}"
+					>
+						{item.short}
+					</span>
 				</a>
 			{/snippet}
 		</Tooltip.Trigger>
-		<Tooltip.Content side="right">
-			<p>
-				{item.label}{#if badge > 0}&nbsp;({badge}){/if}
-			</p>
+		<Tooltip.Content side="right" sideOffset={10}>
+			{item.label}{#if badge > 0}&nbsp;· {badge} нових{/if}
 		</Tooltip.Content>
 	</Tooltip.Root>
 {/snippet}
 
-<Tooltip.Provider delayDuration={200}>
+<Tooltip.Provider delayDuration={150}>
 	<nav
 		aria-label="Навігація CRM"
-		class="flex h-full w-14 shrink-0 flex-col items-center rounded-2xl border border-border bg-[#0f0f12] py-3 dark:bg-card"
+		class="flex h-full w-13 shrink-0 flex-col items-center gap-1 rounded-[8px] px-1 py-1.5"
+		style="background: var(--rail-bg, var(--rail))"
 	>
-		<div class="flex w-full flex-col items-center gap-1 px-1.5">
-			{#each visibleNav as item (item.href)}
+		<div class="flex w-full scrollbar-none flex-col items-center gap-0.5 overflow-y-auto">
+			{#each main as item (item.href)}
 				{@render navLink(item)}
 			{/each}
 		</div>
 
-		<div class="mt-auto flex w-full flex-col items-center px-1.5">
-			{@render navLink(settingsItem)}
-		</div>
+		{#if system.length > 0}
+			<div class="mt-auto flex w-full flex-col items-center gap-0.5">
+				{#each system as item (item.href)}
+					{@render navLink(item)}
+				{/each}
+			</div>
+		{/if}
 	</nav>
 </Tooltip.Provider>

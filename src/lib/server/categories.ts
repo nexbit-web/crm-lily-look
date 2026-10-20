@@ -1,9 +1,14 @@
 import { prisma } from './db';
+import { cached } from './cache';
 
 /**
  * Плаский список категорій з шляхом («Сукні → Вечірні») для <select>.
  */
-export async function categoryOptions(): Promise<{ id: string; label: string }[]> {
+export function categoryOptions(): Promise<{ id: string; label: string }[]> {
+	return cached('categories:options', { tags: ['categories'], ttl: 86_400 }, readCategoryOptions);
+}
+
+async function readCategoryOptions(): Promise<{ id: string; label: string }[]> {
 	const categories = await prisma.category.findMany({
 		orderBy: [{ position: 'asc' }, { name: 'asc' }],
 		select: { id: true, name: true, parentId: true }

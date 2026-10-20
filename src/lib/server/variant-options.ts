@@ -1,4 +1,5 @@
 import { prisma } from './db';
+import { cached } from './cache';
 
 export type VariantOptions = {
 	/** Розміри, які вже зустрічаються в базі, від найпоширенішого. */
@@ -15,7 +16,15 @@ const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
  * Сенс у тому, щоб «Чорний» лишався одним кольором, а не перетворювався на
  * «чорний»/«Чорний ». Дані лише читаються, нічого не нормалізується в базі.
  */
-export async function variantOptions(): Promise<VariantOptions> {
+export function variantOptions(): Promise<VariantOptions> {
+	return cached(
+		'products:variant-options',
+		{ tags: ['products'], ttl: 86_400 },
+		readVariantOptions
+	);
+}
+
+async function readVariantOptions(): Promise<VariantOptions> {
 	const [sizeRows, colorRows] = await Promise.all([
 		prisma.productVariant.groupBy({ by: ['size'], _count: { _all: true } }),
 		prisma.productVariant.groupBy({ by: ['color', 'colorHex'], _count: { _all: true } })

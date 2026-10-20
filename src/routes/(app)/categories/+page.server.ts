@@ -1,5 +1,7 @@
 import { fail } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
+import { cached } from '$lib/server/cache';
 import { isCloudinaryUrl } from '$lib/server/cloudinary';
 import { slugify } from '$lib/slug';
 import type { Actions, PageServerLoad } from './$types';
@@ -10,7 +12,19 @@ const MAX_DEPTH = 2;
 /** «Немає батьківської» — Select не вміє порожнє значення, тож маркер. */
 const ROOT = 'root';
 
-export const load: PageServerLoad = async () => {
+// Категорії міняє лише CRM, а кожна зміна скидає кеш — тож хоч на добу.
+// Кількість товарів у категорії міняється разом із товарами — тег products.
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = (event) =>
+	streamOnFirstLoad(
+		event,
+		cached('categories:tree', { tags: ['categories', 'products'], ttl: 86_400 }, readCategories)
+	);
+
+async function readCategories() {
 	const rows = await prisma.category.findMany({
 		orderBy: [{ position: 'asc' }, { name: 'asc' }],
 		select: {
@@ -24,7 +38,7 @@ export const load: PageServerLoad = async () => {
 	});
 
 	// Дерево розкладаємо в плаский список у порядку показу: кожен рядок одразу
-	// знає свій відступ і чи є куди його рухати серед сусідів.
+	// знає свій відступ.
 	type Row = {
 		id: string;
 		name: string;
@@ -34,8 +48,6 @@ export const load: PageServerLoad = async () => {
 		depth: number;
 		productCount: number;
 		childCount: number;
-		canUp: boolean;
-		canDown: boolean;
 	};
 
 	const categories: Row[] = [];
@@ -43,8 +55,7 @@ export const load: PageServerLoad = async () => {
 	function walk(parentId: string | null, depth: number) {
 		if (depth > MAX_DEPTH + 2) return;
 
-		const siblings = rows.filter((row) => row.parentId === parentId);
-		siblings.forEach((row, index) => {
+		for (const row of rows.filter((item) => item.parentId === parentId)) {
 			categories.push({
 				id: row.id,
 				name: row.name,
@@ -53,18 +64,16 @@ export const load: PageServerLoad = async () => {
 				parentId: row.parentId,
 				depth,
 				productCount: row._count.products,
-				childCount: row._count.children,
-				canUp: index > 0,
-				canDown: index < siblings.length - 1
+				childCount: row._count.children
 			});
 			walk(row.id, depth + 1);
-		});
+		}
 	}
 
 	walk(null, 0);
 
 	return { categories, total: rows.length };
-};
+}
 
 /** Мапа «дитина → батько» для перевірок циклів і глибини. */
 async function tree(): Promise<Map<string, string | null>> {
@@ -115,6 +124,21 @@ async function nextPosition(parentId: string | null): Promise<number> {
 		select: { position: true }
 	});
 	return (last?.position ?? -1) + 1;
+}
+
+/** Скільки рівнів під категорією (0 — без підкатегорій). */
+function heightOf(map: Map<string, string | null>, id: string, depth = 0): number {
+	if (depth > 20) return 0;
+	let height = 0;
+	for (const [child, parent] of map) {
+		if (parent === id) height = Math.max(height, 1 + heightOf(map, child, depth + 1));
+	}
+	return height;
+}
+
+/** Ідентифікатори з форми масової дії: без порожніх і повторів. */
+function selectedIds(form: FormData): string[] {
+	return [...new Set(form.getAll('ids').map((value) => String(value).trim()))].filter(Boolean);
 }
 
 export const actions: Actions = {
@@ -181,39 +205,141 @@ export const actions: Actions = {
 		return { saved: true };
 	},
 
-	/** Міняє категорію місцями із сусідом і нормалізує весь ряд. */
-	move: async ({ request }) => {
+	/**
+	 * Новий порядок сусідів після перетягування мишею: `ids` — увесь ряд
+	 * однієї батьківської категорії в потрібному порядку.
+	 *
+	 * Записуємо, лише якщо ряд збігається з базою один в один: інакше
+	 * (хтось у сусідній вкладці додав чи переніс категорію) порядок
+	 * переплутався б — краще попросити оновити сторінку.
+	 */
+	reorder: async ({ request }) => {
 		const form = await request.formData();
-		const id = String(form.get('id') ?? '').trim();
-		const dir = String(form.get('dir') ?? '');
-
-		if (dir !== 'up' && dir !== 'down') return fail(400, { message: 'Невідомий напрямок' });
-
-		const target = await prisma.category.findUnique({
-			where: { id },
-			select: { parentId: true }
-		});
-		if (!target) return fail(404, { message: 'Категорію не знайдено' });
+		const parentRaw = String(form.get('parentId') ?? '').trim();
+		const parentId = parentRaw === '' || parentRaw === ROOT ? null : parentRaw;
+		const ids = form.getAll('ids').map((value) => String(value));
 
 		const siblings = await prisma.category.findMany({
-			where: { parentId: target.parentId },
-			orderBy: [{ position: 'asc' }, { name: 'asc' }],
+			where: { parentId },
 			select: { id: true }
 		});
+		const known = new Set(siblings.map((sibling) => sibling.id));
+		const sameSet =
+			ids.length === known.size &&
+			new Set(ids).size === ids.length &&
+			ids.every((id) => known.has(id));
+		if (!sameSet) return fail(409, { message: 'Список змінився — оновіть сторінку' });
 
-		const index = siblings.findIndex((sibling) => sibling.id === id);
-		const swapWith = dir === 'up' ? index - 1 : index + 1;
-		if (index === -1 || swapWith < 0 || swapWith >= siblings.length) return { moved: false };
-
-		[siblings[index], siblings[swapWith]] = [siblings[swapWith], siblings[index]];
-
-		// Позиції в базі часто нульові (default), тому міняти дві з них мало —
-		// переписуємо весь ряд, після чого порядок однозначний.
-		for (const [position, sibling] of siblings.entries()) {
-			await prisma.category.update({ where: { id: sibling.id }, data: { position } });
-		}
+		// Весь ряд одним махом: або новий порядок цілком, або старий.
+		await prisma.$transaction(
+			ids.map((id, position) =>
+				prisma.category.update({ where: { id }, data: { position }, select: { id: true } })
+			)
+		);
 
 		return { moved: true };
+	},
+
+	/**
+	 * Видалити кілька категорій разом. Можна й цілу гілку: батька з усіма
+	 * підкатегоріями — тоді діти йдуть першими. Не видаляємо нічого, якщо
+	 * хоч одна категорія з товарами або має підкатегорію поза вибором.
+	 */
+	bulkDelete: async ({ request }) => {
+		const ids = selectedIds(await request.formData());
+		if (ids.length === 0) return fail(400, { message: 'Нічого не вибрано' });
+
+		const rows = await prisma.category.findMany({
+			where: { id: { in: ids } },
+			select: {
+				id: true,
+				name: true,
+				_count: { select: { products: true } },
+				children: { select: { id: true } }
+			}
+		});
+		if (rows.length !== ids.length) {
+			return fail(409, { message: 'Частини категорій уже немає — оновіть сторінку' });
+		}
+
+		const chosen = new Set(ids);
+		const withProducts = rows.filter((row) => row._count.products > 0);
+		if (withProducts.length > 0) {
+			const names = withProducts.map((row) => `«${row.name}»`).join(', ');
+			return fail(400, { message: `У ${names} ще є товари — спершу перенесіть їх` });
+		}
+		const orphaning = rows.filter((row) => row.children.some((child) => !chosen.has(child.id)));
+		if (orphaning.length > 0) {
+			const names = orphaning.map((row) => `«${row.name}»`).join(', ');
+			return fail(400, {
+				message: `У ${names} є підкатегорії, яких немає у виборі — виберіть і їх або перенесіть`
+			});
+		}
+
+		// Найглибші — першими: на дітях стоїть SetNull, і батько, видалений
+		// раніше, підняв би їх у корінь посеред транзакції.
+		const map = await tree();
+		const ordered = [...ids].sort((a, b) => depthOf(map, b) - depthOf(map, a));
+		await prisma.$transaction(
+			ordered.map((id) => prisma.category.delete({ where: { id }, select: { id: true } }))
+		);
+
+		return { deleted: ids.length };
+	},
+
+	/**
+	 * Перенести вибрані категорії під іншого батька (або на верхній рівень).
+	 * Підкатегорії їдуть разом зі своєю: якщо вибрано й батька, і дитину,
+	 * переноситься лише батько — гілка не розсипається.
+	 */
+	bulkMove: async ({ request }) => {
+		const form = await request.formData();
+		const ids = selectedIds(form);
+		const parentRaw = String(form.get('parentId') ?? '').trim();
+		const parentId = parentRaw === '' || parentRaw === ROOT ? null : parentRaw;
+		if (ids.length === 0) return fail(400, { message: 'Нічого не вибрано' });
+
+		const map = await tree();
+		if (ids.some((id) => !map.has(id))) {
+			return fail(409, { message: 'Частини категорій уже немає — оновіть сторінку' });
+		}
+		if (parentId && !map.has(parentId)) {
+			return fail(400, { message: 'Батьківської категорії більше немає' });
+		}
+
+		const chosen = new Set(ids);
+		// Лише верхні з вибраних: у кого жоден предок не вибраний.
+		const roots = ids.filter((id) => {
+			let current = map.get(id) ?? null;
+			for (let depth = 0; current && depth < 20; depth += 1) {
+				if (chosen.has(current)) return false;
+				current = map.get(current) ?? null;
+			}
+			return true;
+		});
+
+		if (parentId && roots.some((id) => isSelfOrDescendant(map, parentId, id))) {
+			return fail(400, { message: 'Категорію не можна вкласти в саму себе' });
+		}
+		const base = parentId ? depthOf(map, parentId) + 1 : 0;
+		if (roots.some((id) => base + heightOf(map, id) > MAX_DEPTH)) {
+			return fail(400, { message: `Глибше ${MAX_DEPTH + 1} рівнів вкладати не можна` });
+		}
+
+		// У новому ряду — в кінці, у тому порядку, як ішли в таблиці.
+		const moving = roots.filter((id) => (map.get(id) ?? null) !== parentId);
+		const start = await nextPosition(parentId);
+		await prisma.$transaction(
+			moving.map((id, index) =>
+				prisma.category.update({
+					where: { id },
+					data: { parentId, position: start + index },
+					select: { id: true }
+				})
+			)
+		);
+
+		return { moved: moving.length };
 	},
 
 	delete: async ({ request }) => {

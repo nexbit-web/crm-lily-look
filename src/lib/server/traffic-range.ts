@@ -10,7 +10,8 @@ export type Range = { key: RangeKey; from: string; to: string; days: number };
  */
 export const MAX_DAYS = 366;
 
-const DEFAULT: RangeKey = '7';
+/** Відкрили сторінку без параметрів — показуємо сьогоднішній день. */
+const DEFAULT: RangeKey = 'today';
 
 /** «2026-02-31» відкидаємо: регулярки мало, дату перевіряємо календарем. */
 function isDay(value: string): boolean {

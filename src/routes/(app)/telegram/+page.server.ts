@@ -1,9 +1,12 @@
 import { error, fail } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
 import { createInvite } from '$lib/server/bot-invite';
 import { atLeast } from '$lib/permissions';
 import { accessState, isBotRole, type BotRoleKey } from '$lib/bot';
 import type { Actions, PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 /** Скільки останніх кодів показуємо: історія тут довідкова. */
 const INVITES_SHOWN = 30;
@@ -23,7 +26,7 @@ function idToString(value: bigint): string {
 	return value.toString();
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
+const loadView = async ({ locals }: LoadEvent) => {
 	requireAdmin(locals);
 
 	const [users, invites] = await Promise.all([
@@ -71,6 +74,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 		activeAdmins: staff.filter((user) => user.role === 'ADMIN' && accessState(user) === 'active')
 			.length
 	};
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	requireAdmin(event.locals);
+	return streamOnFirstLoad(event, loadView(event));
 };
 
 /**

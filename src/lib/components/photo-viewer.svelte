@@ -1,7 +1,33 @@
+<script lang="ts" module>
+	import { cloudinaryPreview } from '$lib/cloudinary-url';
+
+	/**
+	 * Уже замовлені великі версії фото. Обʼєкти Image тримаємо, щоб браузер не
+	 * скасував завантаження, а повторно те саме фото не тягнув.
+	 */
+	// Кеш завантажень, а не стан: інтерфейс його не читає, реактивність ні до чого.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const warmed = new Map<string, HTMLImageElement>();
+
+	/**
+	 * Заздалегідь тягне версію для перегляду. Cloudinary генерує кожен розмір
+	 * при першому запиті, і це помітна пауза — краще перечекати її, поки
+	 * курсор лише наближається до фото.
+	 */
+	export function warmPreview(url: string): void {
+		const src = cloudinaryPreview(url);
+		if (warmed.has(src) || typeof Image === 'undefined') return;
+		const image = new Image();
+		image.decoding = 'async';
+		image.src = src;
+		warmed.set(src, image);
+	}
+</script>
+
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from 'bits-ui';
 	import { ChevronLeft, ChevronRight, X } from '@lucide/svelte';
-	import { cloudinaryPreview } from '$lib/cloudinary-url';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	/**
 	 * Перегляд фото на весь екран.
@@ -22,6 +48,15 @@
 	} = $props();
 
 	const current = $derived(index === null ? null : (urls[index] ?? null));
+	/** Чи вже домалювалось поточне фото; поки ні — крутиться індикатор. */
+	let loaded = $state(false);
+
+	// Щойно перегляд відкрито — тягнемо всі фото товару одразу: гортання
+	// далі миттєве, без паузи на кожному кроці.
+	const isOpen = $derived(index !== null);
+	$effect(() => {
+		if (isOpen) for (const url of urls) warmPreview(url);
+	});
 
 	function close() {
 		index = null;
@@ -57,11 +92,26 @@
 			<DialogPrimitive.Title class="sr-only">{alt}</DialogPrimitive.Title>
 
 			{#if current}
-				<img
-					src={cloudinaryPreview(current)}
-					{alt}
-					class="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
-				/>
+				<!-- Нове фото — новий <img>: старе не висить на екрані, поки
+				     лічильник уже показує наступне. -->
+				{#key current}
+					<img
+						src={cloudinaryPreview(current)}
+						{alt}
+						class="max-h-full max-w-full rounded-lg object-contain shadow-2xl transition-opacity duration-150 {loaded
+							? 'opacity-100'
+							: 'opacity-0'}"
+						onload={() => (loaded = true)}
+						onerror={() => (loaded = true)}
+						{@attach (image: HTMLImageElement) => {
+							// Із кешу фото готове ще до onload — не блимаємо індикатором.
+							loaded = image.complete && image.naturalWidth > 0;
+						}}
+					/>
+				{/key}
+				{#if !loaded}
+					<Spinner class="pointer-events-none absolute size-6 text-white/70" />
+				{/if}
 			{/if}
 
 			<!-- Кнопки не мають закривати перегляд разом із кліком по тлу. -->

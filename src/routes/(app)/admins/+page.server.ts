@@ -1,8 +1,12 @@
 import { error, fail } from '@sveltejs/kit';
+import { streamOnFirstLoad } from '$lib/server/stream';
 import { prisma } from '$lib/server/db';
 import { createStaffAccount } from '$lib/server/staff';
+import { markSessionStale } from '$lib/server/sessions';
 import { atLeast, isRole, toRole } from '$lib/permissions';
 import type { Actions, PageServerLoad } from './$types';
+
+type LoadEvent = Parameters<PageServerLoad>[0];
 
 /**
  * Сторінка й кожна її дія — тільки для адміністратора.
@@ -21,7 +25,7 @@ function adminCount() {
 	return prisma.user.count({ where: { role: 'ADMIN' } });
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
+const loadView = async ({ locals }: LoadEvent) => {
 	const me = requireAdmin(locals);
 
 	const staff = await prisma.user.findMany({
@@ -42,6 +46,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 			createdAt: user.createdAt
 		}))
 	};
+};
+
+/**
+ * Перше відкриття — дані стрімом (скелетон одразу), переходи й «Зберегти» —
+ * як раніше. Див. $lib/server/stream.
+ */
+export const load: PageServerLoad = async (event) => {
+	requireAdmin(event.locals);
+	return streamOnFirstLoad(event, loadView(event));
 };
 
 export const actions: Actions = {
@@ -75,6 +88,8 @@ export const actions: Actions = {
 			}
 
 			await prisma.user.update({ where: { id }, data: { role: roleRaw } });
+			// Нова роль діє з наступного ж запиту, а не через 5 хвилин cookie-кешу.
+			await markSessionStale(id);
 			return { saved: true };
 		}
 
@@ -119,8 +134,10 @@ export const actions: Actions = {
 		}
 
 		// Сесії й пароль підуть каскадом (onDelete: Cascade на session/account),
-		// тому доступ зникає одразу, а не після завершення поточної сесії.
+		// а позначка змушує перечитати сесію з бази — тож доступ зникає з
+		// наступного ж запиту, навіть поки cookie-кеш ще живий.
 		await prisma.user.delete({ where: { id } });
+		await markSessionStale(id);
 		return { deleted: true };
 	}
 };

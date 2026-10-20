@@ -24,8 +24,9 @@ type Result = {
 };
 
 function open(search = '') {
-	return (load as unknown as (e: { url: URL }) => Promise<Result>)({
-		url: new URL(`http://localhost/orders${search}`)
+	return (load as unknown as (e: { url: URL; depends: () => void }) => Promise<Result>)({
+		url: new URL(`http://localhost/orders${search}`),
+		depends: () => {}
 	});
 }
 

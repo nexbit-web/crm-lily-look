@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { authOptions } from './auth-options';
+import { authSecret } from './auth-secret';
 import { prisma } from './db';
 import type { Role } from '$lib/permissions';
 
@@ -11,7 +12,7 @@ import type { Role } from '$lib/permissions';
  * заводить акаунт: адмін опинився б у CRM під чужим імʼям. Тут кукі нікуди
  * не потрапляють, бо плагіна, який їх ставить, немає.
  */
-const headless = betterAuth(authOptions);
+const headless = betterAuth({ ...authOptions, secret: authSecret() });
 
 export type CreateStaffResult = { ok: true; id: string } | { ok: false; message: string };
 

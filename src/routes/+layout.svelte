@@ -1,11 +1,15 @@
 <script lang="ts">
 	import '../app.css';
-	import { Toaster } from 'svelte-hot-french-toast';
+	import Toaster from '$lib/components/toaster/toaster.svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import favicon from '$lib/assets/favicon.svg';
 	import nprogress from 'nprogress';
-	import { navigating } from '$app/state';
+	import { navigating, page } from '$app/state';
 	let { children } = $props();
+
+	// Тости — у лівому нижньому куті робочої панелі CRM (сайдбар 52 px + відступи
+	// 6 px, ще 12 px усередину панелі). На сторінці входу панелі немає — кут вікна.
+	const inApp = $derived(page.route.id?.startsWith('/(app)') ?? false);
 
 	nprogress.configure({ showSpinner: false, minimum: 0.15, speed: 300, trickleSpeed: 150 });
 
@@ -28,15 +32,4 @@
 {@render children()}
 
 <ModeWatcher />
-<Toaster
-  toastOptions={{
-    duration: 4000,
-    class: 'app-toast',
-    style:
-      'background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--foreground); border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent); box-shadow: 0 12px 32px -12px rgba(0,0,0,0.24), 0 2px 6px rgba(0,0,0,0.06); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); padding: 11px 14px; font-size: 13.5px; line-height: 1.35; font-weight: 400; letter-spacing: -0.01em; border-radius: 24px;',
-    iconTheme: {
-      primary: 'var(--primary)',
-      secondary: 'var(--primary-foreground)',
-    },
-  }}
-/>
+<Toaster class={inApp ? 'bottom-4.5 left-19' : 'bottom-4 left-4'} />

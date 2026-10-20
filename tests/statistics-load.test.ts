@@ -61,6 +61,10 @@ describe('сторінка статистики', () => {
 	});
 
 	describe('доступ', () => {
+		it('менеджера не пускає — виручку бачить лише адміністратор', async () => {
+			await expect(open('MANAGER')).rejects.toSatisfy(isHttpError);
+		});
+
 		it('оператора й гостя не пускає — на сторінці виручка', async () => {
 			// Сайдбар цей пункт ховає, але прямий перехід за адресою має
 			// впертись у ту саму перевірку.
@@ -72,10 +76,8 @@ describe('сторінка статистики', () => {
 			expect(db.orderAggregate).not.toHaveBeenCalled();
 		});
 
-		it('менеджера й адміністратора пускає', async () => {
-			for (const role of ['MANAGER', 'ADMIN']) {
-				await expect(open(role)).resolves.toBeTruthy();
-			}
+		it('адміністратора пускає', async () => {
+			await expect(open('ADMIN')).resolves.toBeTruthy();
 		});
 	});
 
@@ -96,7 +98,7 @@ describe('сторінка статистики', () => {
 			db.queryRaw.mockImplementation(pending([]));
 			db.variantFindMany.mockImplementation(pending([]));
 
-			const result = open('MANAGER');
+			const result = open('ADMIN');
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
 			expect(started).toBe(8);
@@ -106,7 +108,7 @@ describe('сторінка статистики', () => {
 		});
 
 		it('дні групує Postgres, а не Node', async () => {
-			await open('MANAGER');
+			await open('ADMIN');
 
 			// Два $queryRaw: ряд по днях і топ товарів. Обидва повертають
 			// уже згруповане — тисячі рядків у застосунок не їдуть.
@@ -114,21 +116,21 @@ describe('сторінка статистики', () => {
 		});
 
 		it('залишки бере обмеженою вибіркою', async () => {
-			await open('MANAGER');
+			await open('ADMIN');
 			expect(db.variantFindMany.mock.calls[0][0]).toMatchObject({ take: 6 });
 		});
 	});
 
 	describe('період з адреси', () => {
 		it('сміття у параметрі дає місяць за замовчуванням', async () => {
-			const data = await open('MANAGER', '?period=99999');
+			const data = await open('ADMIN', '?period=99999');
 			expect(data.period).toBe('30');
 			expect(data.days).toBe(PERIOD_DAYS['30']);
 		});
 
 		it('кожен відомий період дає рівно стільки точок, скільки днів', async () => {
 			for (const period of PERIODS) {
-				const data = await open('MANAGER', `?period=${period}`);
+				const data = await open('ADMIN', `?period=${period}`);
 				const days = PERIOD_DAYS[period];
 
 				expect(data.days).toBe(days);
@@ -137,14 +139,14 @@ describe('сторінка статистики', () => {
 		});
 
 		it('рік показує тижнями, коротші періоди — днями', async () => {
-			expect((await open('MANAGER', '?period=365')).bucket).toBe(7);
-			expect((await open('MANAGER', '?period=90')).bucket).toBe(1);
+			expect((await open('ADMIN', '?period=365')).bucket).toBe(7);
+			expect((await open('ADMIN', '?period=90')).bucket).toBe(1);
 		});
 	});
 
 	describe('підрахунки', () => {
 		it('порожня база не дає NaN і ділення на нуль', async () => {
-			const data = await open('MANAGER');
+			const data = await open('ADMIN');
 
 			expect(data.metrics.revenue.value).toBe(0);
 			expect(data.metrics.average.value).toBe(0);
@@ -159,7 +161,7 @@ describe('сторінка статистики', () => {
 				.mockResolvedValueOnce({ _sum: { total: 100000 }, _count: { _all: 4 } })
 				.mockResolvedValueOnce({ _sum: { total: 0 }, _count: { _all: 0 } });
 
-			const data = await open('MANAGER');
+			const data = await open('ADMIN');
 
 			expect(data.metrics.revenue.value).toBe(100000);
 			expect(data.metrics.revenue.delta).toBeNull();
@@ -170,7 +172,7 @@ describe('сторінка статистики', () => {
 				.mockResolvedValueOnce({ _sum: { total: 100000 }, _count: { _all: 4 } })
 				.mockResolvedValueOnce({ _sum: { total: 50000 }, _count: { _all: 2 } });
 
-			const data = await open('MANAGER');
+			const data = await open('ADMIN');
 
 			expect(data.metrics.average.value).toBe(25000);
 			// Виручка подвоїлась відносно попереднього періоду.
@@ -182,7 +184,7 @@ describe('сторінка статистики', () => {
 			const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(today);
 			db.queryRaw.mockResolvedValueOnce([{ day: key, revenue: 1200, orders: 2 }]);
 
-			const data = await open('MANAGER', '?period=7');
+			const data = await open('ADMIN', '?period=7');
 
 			expect(data.series).toHaveLength(7);
 			expect(data.series.at(-1)).toMatchObject({ revenue: 1200, orders: 2 });

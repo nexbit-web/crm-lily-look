@@ -7,7 +7,7 @@
 // при першому старті (у т.ч. порожнє), залишалося б до повного рестарту Node.
 import dotenv from 'dotenv';
 import tailwindcss from '@tailwindcss/vite';
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
@@ -23,10 +23,10 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-			// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-			adapter: adapter()
+			// Vercel. Функції — у Франкфурті (fra1), поруч із базою Neon і Redis
+			// (обидва в eu-central-1): кожен запит до них — 1–2 мс, а не 100 мс через
+			// океан, як було б у типовому регіоні iad1 (Вашингтон).
+			adapter: adapter({ runtime: 'nodejs22.x', regions: ['fra1'] })
 		})
 	]
 });
